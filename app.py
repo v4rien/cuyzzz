@@ -13,8 +13,7 @@ urllib3_cn.allowed_gai_family = allowed_gai_family
 # --- SETUP HALAMAN ---
 st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wide") 
 
-st.title("🚀 Sjinn AI - Multi Task Generator")
-st.write("Mode Batch: Request banyak video sekaligus dengan delay 3 detik.")
+st.title("Sjinn AI - Multi Task Generator")
 
 # --- SIDEBAR (PENGATURAN AKUN) ---
 with st.sidebar:
