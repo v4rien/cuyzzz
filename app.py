@@ -17,7 +17,7 @@ st.title("Sjinn AI - Multi Task Generator")
 
 # --- SIDEBAR (PENGATURAN AKUN) ---
 with st.sidebar:
-    st.header("Pengaturan Akun SJINN AI")
+    st.header("Account Conifg")
     
     # 1. Input Email
     email_input = st.text_input("Email", value="")
