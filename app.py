@@ -11,45 +11,43 @@ def allowed_gai_family():
 urllib3_cn.allowed_gai_family = allowed_gai_family
 
 # --- SETUP HALAMAN ---
-st.set_page_config(page_title="Sjinn Loop Generator", page_icon="🎥", layout="centered") 
+st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wide") 
 
-st.title("🎥 Sjinn AI - Loop Generator")
-st.write("Upload gambar sekali, generate video berkali-kali otomatis.")
+st.title("🚀 Sjinn AI - Multi Task Generator")
+st.write("Mode Cepat: Request banyak video sekaligus, lalu tunggu hasil bersamaan.")
 
-# --- SIDEBAR (Konfigurasi) ---
+# --- SIDEBAR ---
 with st.sidebar:
-    st.header("Pengaturan Akun")
-    # Ganti value default dengan akun Anda jika ingin
+    st.header("Pengaturan")
     email_input = st.text_input("Email", value="osumar5@pdf-cutter.com")
     pass_input = st.text_input("Password", value="osumar5@pdf-cutter.com", type="password")
 
 # --- INPUT USER ---
-col_input1, col_input2 = st.columns(2)
-with col_input1:
+c1, c2 = st.columns([3, 1])
+with c1:
     prompt_input = st.text_input("Prompt Video", value="she is waving")
-with col_input2:
-    loop_count = st.number_input("Jumlah Video", min_value=1, max_value=10, value=1, step=1)
+with c2:
+    loop_count = st.number_input("Jumlah Video", min_value=1, max_value=20, value=2, step=1)
 
 uploaded_file = st.file_uploader("Pilih Gambar (.png/.jpg)", type=['png', 'jpg', 'jpeg'])
 
 # --- FUNGSI UTAMA ---
-def process_automation():
+def process_batch():
     if not uploaded_file:
-        st.warning("⚠️ Harap upload gambar terlebih dahulu!")
+        st.warning("⚠️ Harap upload gambar dulu!")
         return
 
-    # Siapkan Session
     session = requests.Session()
     session.headers.update({
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         "Referer": "https://sjinn.ai/login"
     })
 
-    # Area Log Status (Biar rapi)
-    status_log = st.status("🚀 Memulai Proses...", expanded=True)
+    # Container Log
+    log_status = st.status("🚀 Memulai Sistem...", expanded=True)
 
     # 1. LOGIN
-    status_log.write("🔐 Sedang Login...")
+    log_status.write("🔐 Sedang Login...")
     try:
         r_csrf = session.get("https://sjinn.ai/api/auth/csrf")
         csrf_token = r_csrf.json().get("csrfToken")
@@ -63,16 +61,15 @@ def process_automation():
         
         r_login = session.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers=h_login)
         if r_login.status_code != 200:
-            status_log.update(label="❌ Gagal Login!", state="error")
-            st.error("Login gagal. Cek email/password.")
+            log_status.update(label="❌ Gagal Login!", state="error")
+            st.error("Login gagal.")
             return
     except Exception as e:
-        status_log.update(label="❌ Error Login!", state="error")
         st.error(f"Error: {e}")
         return
 
-    # 2. UPLOAD (Hanya Sekali)
-    status_log.write("📤 Mengupload Gambar ke Server...")
+    # 2. UPLOAD (Sekali Saja)
+    log_status.write("📤 Mengupload Gambar Master...")
     try:
         mime_type = uploaded_file.type
         r_init = session.post("https://sjinn.ai/api/upload_file", json={"content_type": mime_type})
@@ -81,84 +78,111 @@ def process_automation():
         file_uuid = data_up.get("file_name")
         
         uploaded_file.seek(0)
-        requests.put(
-            signed_url, 
-            data=uploaded_file, 
-            headers={"Content-Type": mime_type, "Content-Length": str(uploaded_file.size)}
-        )
+        requests.put(signed_url, data=uploaded_file, headers={"Content-Type": mime_type, "Content-Length": str(uploaded_file.size)})
     except Exception as e:
-        status_log.update(label="❌ Gagal Upload!", state="error")
-        st.error(f"Error Upload: {e}")
+        log_status.update(label="❌ Gagal Upload!", state="error")
         return
 
-    status_log.write("✅ Upload selesai. Memulai antrian pembuatan video...")
-    status_log.update(label="⏳ Sedang Memproses Video...", state="running", expanded=True)
-
-    # 3. LOOPING (Membuat Video Berulang)
+    log_status.write("✅ Upload beres. Bersiap menembak task...")
+    
+    # 3. MULTI-TASK FIRING (Tembak task bertubi-tubi)
     session.headers.update({"Referer": "https://sjinn.ai/tool-mode/sjinn-image-to-video"})
     
-    # Tempat hasil video akan muncul
-    result_container = st.container()
-
+    tasks_submitted = 0
+    progress_bar = st.progress(0)
+    
     for i in range(1, loop_count + 1):
-        status_log.write(f"⚙️ [Video {i}/{loop_count}] Mengirim perintah ke AI...")
-        
-        # A. Create Task
         try:
+            # Create Task
             payload_task = {
                 "id": "sjinn-image-to-video",
                 "input": {"image_url": file_uuid, "prompt": prompt_input},
                 "mode": "template"
             }
-            # Opsional: Tambah spasi random agar prompt dianggap unik tiap request
-            if i > 1: payload_task["input"]["prompt"] += " " 
+            # Trik: Tambah spasi random agar tidak dianggap duplicate request oleh server
+            if i > 1: payload_task["input"]["prompt"] += " " * i 
 
             r_task = session.post("https://sjinn.ai/api/create_sjinn_image_to_video_task", json=payload_task)
-            if r_task.status_code != 200:
-                st.error(f"Gagal membuat task ke-{i}")
-                continue
-        except:
-            continue
+            
+            if r_task.status_code == 200:
+                log_status.write(f"➕ Task #{i} dikirim...")
+                tasks_submitted += 1
+            else:
+                log_status.warning(f"⚠️ Gagal kirim Task #{i}")
 
-        # B. Polling (Menunggu Hasil)
-        video_found = False
-        start_time = time.time()
+            # Update Progress Bar
+            progress_bar.progress(int((i / loop_count) * 100))
+            
+            # DELAY 3 DETIK (Sesuai Permintaan)
+            if i < loop_count: # Jangan delay di task terakhir
+                time.sleep(3)
+                
+        except Exception as e:
+            st.error(f"Error sending task {i}: {e}")
+
+    log_status.update(label=f"⏳ Menunggu {tasks_submitted} Video Selesai...", state="running", expanded=True)
+    
+    # 4. BATCH MONITORING (Pantau semua hasil sekaligus)
+    st.divider()
+    st.subheader("📺 Galeri Hasil")
+    
+    # Tempat untuk menampilkan video (Grid Layout)
+    result_cols = st.columns(3) # Tampilkan 3 video per baris
+    
+    completed_urls = set() # Untuk mencatat URL yg sudah ditampilkan agar tidak duplikat
+    failed_count = 0
+    
+    # Timeout Loop (Max 5 menit)
+    start_wait = time.time()
+    while len(completed_urls) + failed_count < tasks_submitted:
         
-        while time.time() - start_time < 200: # Timeout 200 detik
-            time.sleep(5)
-            try:
-                r_check = session.post("https://sjinn.ai/api/query_app_general_list", json={"id": "sjinn-image-to-video"})
-                if r_check.json().get("success"):
-                    items = r_check.json()["data"].get("list", [])
-                    if items:
-                        latest = items[0]
-                        status = latest.get("status")
+        if time.time() - start_wait > 300:
+            st.warning("⚠️ Timeout Waktu Habis.")
+            break
+            
+        time.sleep(5) # Cek setiap 5 detik
+        
+        try:
+            # Ambil List Task Terbaru
+            r_check = session.post("https://sjinn.ai/api/query_app_general_list", json={"id": "sjinn-image-to-video"})
+            
+            if r_check.json().get("success"):
+                # Kita ambil N task teratas (dimana N = jumlah task yg kita submit)
+                all_tasks = r_check.json()["data"].get("list", [])
+                
+                # Ambil task yang relevan saja (top N)
+                relevant_tasks = all_tasks[:tasks_submitted]
+                
+                # Cek satu per satu
+                for idx, task in enumerate(relevant_tasks):
+                    status = task.get("status")
+                    vid_url = task.get("output_url")
+                    task_id_server = task.get("task_id") # Pakai ID unik task
+                    
+                    # Jika SUKSES dan Belum Ditampilkan
+                    if status == 1 and task_id_server not in completed_urls:
+                        completed_urls.add(task_id_server)
                         
-                        if status == 1: # Sukses
-                            video_url = latest.get("output_url")
-                            video_found = True
-                            
-                            # TAMPILKAN HASIL DI LAYAR
-                            with result_container:
-                                st.success(f"Video #{i} Selesai!")
-                                # Layout kolom agar video kecil di tengah
-                                c1, c2, c3 = st.columns([1, 2, 1])
-                                with c2:
-                                    st.video(video_url)
-                                st.divider()
-                            break
-                        elif status == 3:
-                            st.error(f"Video #{i} Gagal (Ditolak Server)")
-                            break
-            except:
-                pass
-        
-        if not video_found:
-            st.warning(f"Video #{i} Timeout (Waktu habis).")
+                        # Tampilkan di Grid
+                        # Logika kolom: video ke-1 di col 0, ke-2 di col 1, dst.
+                        col_idx = (len(completed_urls) - 1) % 3
+                        
+                        with result_cols[col_idx]:
+                            st.success(f"Video #{len(completed_urls)}")
+                            st.video(vid_url)
+                            st.link_button("Download ⬇️", vid_url)
+                    
+                    # Jika GAGAL
+                    elif status == 3 and task_id_server not in completed_urls:
+                        completed_urls.add(task_id_server) # Tetap tandai sbg completed biar loop selesai
+                        failed_count += 1
+                        st.toast(f"Satu video gagal diproses server.", icon="⚠️")
 
-    status_log.update(label="✅ Semua Proses Selesai!", state="complete", expanded=False)
+        except Exception as e:
+            pass
+            
+    log_status.update(label="✅ Semua Proses Selesai!", state="complete", expanded=False)
     st.balloons()
 
-# --- TOMBOL EKSEKUSI ---
-if st.button("MULAI GENERATE", type="primary", use_container_width=True):
-    process_automation()
+if st.button("MULAI BATCH GENERATE", type="primary", use_container_width=True):
+    process_batch()
