@@ -22,17 +22,16 @@ with st.sidebar:
     # 1. Input Email
     email_input = st.text_input("Email", value="")
     
-    # 2. Checkbox Password
-    use_same_pass = st.checkbox("Password same as email", value=True)
-    
-    # 3. Logika Password
-    if use_same_pass:
-        # Jika dicentang, password otomatis sama dengan email & kolom dimatikan (disabled)
+    # 2. Logika Input Password (Dinaikkan ke atas)
+    # Kita butuh variabel sementara agar urutan UI sesuai keinginan Anda
+    if "use_same_pass" in st.session_state and st.session_state.use_same_pass:
         pass_input = email_input
         st.text_input("Password", value=pass_input, type="password", disabled=True)
     else:
-        # Jika tidak dicentang, user ketik manual
         pass_input = st.text_input("Password", value="", type="password")
+
+    # 3. Kolom Centang (Sekarang di bawah password)
+    use_same_pass = st.checkbox("Password same as email", value=True, key="use_same_pass")
 
 # --- INPUT USER (PROMPT & JUMLAH) ---
 c1, c2 = st.columns([3, 1])
