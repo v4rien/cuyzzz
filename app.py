@@ -21,7 +21,7 @@ with st.sidebar:
     st.header("Pengaturan Akun")
     
     # 1. Input Email
-    email_input = st.text_input("Email", value="osumar5@pdf-cutter.com")
+    email_input = st.text_input("Email", value="")
     
     # 2. Checkbox Password
     use_same_pass = st.checkbox("Password same as email", value=True)
