@@ -38,9 +38,9 @@ with st.sidebar:
 # --- INPUT USER (PROMPT & JUMLAH) ---
 c1, c2 = st.columns([3, 1])
 with c1:
-    prompt_input = st.text_input("Prompt Video", value="she is waving")
+    prompt_input = st.text_input("Prompt Video", value="")
 with c2:
-    loop_count = st.number_input("Jumlah Video", min_value=1, max_value=20, value=2, step=1)
+    loop_count = st.number_input("Jumlah Video", min_value=1, max_value=20, value=, step=1)
 
 uploaded_file = st.file_uploader("Pilih Gambar (.png/.jpg)", type=['png', 'jpg', 'jpeg'])
 
