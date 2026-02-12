@@ -1,146 +1,166 @@
-import streamlit as st
 import requests
+import json
 import time
+import os
 import mimetypes
 import socket
 import requests.packages.urllib3.util.connection as urllib3_cn
 
-# --- CONFIG ---
-# Masukkan email/pass di sini atau lebih aman pakai st.secrets nanti
-DEFAULT_EMAIL = "osumar5@pdf-cutter.com"
-DEFAULT_PASS = "osumar5@pdf-cutter.com" 
-
-# --- FIX IPV4 (Agar Upload Cepat di Cloud) ---
+# --- FIX IPV4 (Agar Upload Cepat) ---
 def allowed_gai_family():
     return socket.AF_INET
 urllib3_cn.allowed_gai_family = allowed_gai_family
 
-# --- SETUP HALAMAN ---
-st.set_page_config(page_title="Sjinn Video Generator", page_icon="🎥")
-st.title("🎥 Sjinn AI Auto-Generator")
-st.write("Upload gambar, bot akan otomatis login, upload, dan render video.")
+# --- KONFIGURASI AKUN ---
+EMAIL = "osumar5@pdf-cutter.com"
+PASSWORD = "osumar5@pdf-cutter.com"
+FILE_GAMBAR = "coba.png"
+PROMPT_VIDEO = "she is waving"
 
-# --- SIDEBAR CONFIG ---
-with st.sidebar:
-    st.header("Konfigurasi Akun")
-    email_input = st.text_input("Email", value=DEFAULT_EMAIL)
-    pass_input = st.text_input("Password", value=DEFAULT_PASS, type="password")
-    
-prompt_input = st.text_input("Prompt Video", value="she is waving")
-uploaded_file = st.file_uploader("Pilih Gambar (.png/.jpg)", type=['png', 'jpg', 'jpeg'])
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Referer": "https://sjinn.ai/login",
+}
 
-# --- FUNGSI UTAMA ---
-def process_automation():
-    if not uploaded_file:
-        st.error("Upload gambar dulu bos!")
-        return
-
-    # Siapkan Session
-    session = requests.Session()
-    HEADERS = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://sjinn.ai/login"
-    }
-    session.headers.update(HEADERS)
-
-    # 1. LOGIN
-    status_text = st.empty()
-    progress_bar = st.progress(0)
-    
-    status_text.info("🔐 Sedang Login...")
-    
+def login_sjinn(session):
+    print("[Login] Memulai proses login...")
     try:
-        # Get CSRF
-        r_csrf = session.get("https://sjinn.ai/api/auth/csrf")
+        r_csrf = session.get("https://sjinn.ai/api/auth/csrf", headers=HEADERS)
         csrf_token = r_csrf.json().get("csrfToken")
         
-        # Login
         payload = {
-            "redirect": "false", "email": email_input, "password": pass_input,
+            "redirect": "false", "email": EMAIL, "password": PASSWORD,
             "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"
         }
         h_login = HEADERS.copy()
         h_login["Content-Type"] = "application/x-www-form-urlencoded"
         
         r_login = session.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers=h_login)
-        if r_login.status_code != 200:
-            st.error(f"Login Gagal! {r_login.status_code}")
-            return
+        if r_login.status_code == 200:
+            print("    -> Login Sukses!")
+            return True
+        else:
+            print(f"    [GAGAL] Login: {r_login.status_code}")
+            return False
     except Exception as e:
-        st.error(f"Error Login: {e}")
-        return
+        print(f"    Error Login: {e}")
+        return False
 
-    progress_bar.progress(20)
-    status_text.info("📤 Mengupload Gambar...")
+def upload_image(session):
+    print(f"\n[Upload] Mengupload '{FILE_GAMBAR}' (Hanya sekali)...")
+    file_size = os.path.getsize(FILE_GAMBAR)
+    mime_type, _ = mimetypes.guess_type(FILE_GAMBAR)
+    if not mime_type: mime_type = "image/png"
 
-    # 2. UPLOAD
     try:
-        # Init Upload
-        mime_type = uploaded_file.type
-        r_init = session.post("https://sjinn.ai/api/upload_file", json={"content_type": mime_type})
-        data_up = r_init.json().get("data", {})
-        signed_url = data_up.get("signed_url")
-        file_uuid = data_up.get("file_name")
+        # 1. Minta Izin
+        resp = session.post("https://sjinn.ai/api/upload_file", json={"content_type": mime_type})
+        data = resp.json().get("data", {})
+        signed_url = data.get("signed_url")
+        file_uuid = data.get("file_name")
+
+        # 2. Upload Fisik
+        print("    -> Mengirim data ke server...", end="", flush=True)
+        start = time.time()
+        with open(FILE_GAMBAR, 'rb') as f:
+            requests.put(signed_url, data=f, headers={"Content-Type": mime_type, "Content-Length": str(file_size)})
+        print(f" [SELESAI] ({time.time() - start:.2f} detik)")
         
-        # Upload Fisik (Streaming dari Memory Streamlit)
-        # Kita reset pointer file ke 0 agar terbaca dari awal
-        uploaded_file.seek(0)
-        
-        requests.put(
-            signed_url, 
-            data=uploaded_file, 
-            headers={"Content-Type": mime_type, "Content-Length": str(uploaded_file.size)}
-        )
+        return file_uuid
     except Exception as e:
-        st.error(f"Error Upload: {e}")
-        return
+        print(f"Error Upload: {e}")
+        return None
 
-    progress_bar.progress(50)
-    status_text.info("⚙️ Membuat Task Video...")
-
-    # 3. CREATE TASK
-    try:
-        session.headers.update({"Referer": "https://sjinn.ai/tool-mode/sjinn-image-to-video"})
-        payload_task = {
-            "id": "sjinn-image-to-video",
-            "input": {"image_url": file_uuid, "prompt": prompt_input},
-            "mode": "template"
-        }
-        r_task = session.post("https://sjinn.ai/api/create_sjinn_image_to_video_task", json=payload_task)
-        if r_task.status_code != 200:
-            st.error("Gagal create task")
-            return
-    except Exception as e:
-        st.error(f"Error Task: {e}")
-        return
-
-    # 4. POLLING
-    status_text.info("⏳ Menunggu Rendering (Bisa 1-2 menit)...")
+def process_video_loop(session, file_uuid, loop_count):
+    session.headers.update({"Referer": "https://sjinn.ai/tool-mode/sjinn-image-to-video"})
     
-    for i in range(40):
-        time.sleep(5)
+    for i in range(1, loop_count + 1):
+        print(f"\n=== MEMPROSES VIDEO KE-{i} DARI {loop_count} ===")
+        
+        # 1. CREATE TASK
         try:
-            r_check = session.post("https://sjinn.ai/api/query_app_general_list", json={"id": "sjinn-image-to-video"})
-            if r_check.json().get("success"):
-                items = r_check.json()["data"].get("list", [])
-                if items:
-                    status = items[0].get("status")
-                    if status == 1: # Sukses
-                        video_url = items[0].get("output_url")
-                        progress_bar.progress(100)
-                        status_text.success("✅ Selesai!")
-                        
-                        st.video(video_url)
-                        st.success(f"Link Video: {video_url}")
-                        return
-                    elif status == 3:
-                        st.error("❌ Gagal: Server menolak (Status 3)")
-                        return
-        except:
-            pass
+            payload = {
+                "id": "sjinn-image-to-video",
+                "input": {"image_url": file_uuid, "prompt": PROMPT_VIDEO},
+                "mode": "template"
+            }
+            # Kita tambahkan timestamp/randomness di prompt sedikit agar server tidak menganggap spam
+            # (Opsional, tapi aman)
+            # payload["input"]["prompt"] += " " 
             
-    st.warning("⚠️ Waktu habis (Timeout), coba cek manual di web.")
+            resp = session.post("https://sjinn.ai/api/create_sjinn_image_to_video_task", json=payload)
+            if resp.status_code == 200:
+                print("    -> Task dibuat. Menunggu hasil...")
+            else:
+                print(f"    -> Gagal membuat task! {resp.text}")
+                continue
+        except Exception as e:
+            print(f"    -> Error task: {e}")
+            continue
 
-# Tombol Eksekusi
-if st.button("MULAI GENERATE VIDEO", type="primary"):
-    process_automation()
+        # 2. POLLING & DOWNLOAD
+        berhasil = False
+        for tick in range(1, 40): # Tunggu max 200 detik
+            time.sleep(5)
+            print(f"    ...Cek status ({tick*5} detik)...", end="\r")
+            
+            try:
+                r_check = session.post("https://sjinn.ai/api/query_app_general_list", json={"id": "sjinn-image-to-video"})
+                if r_check.json().get("success"):
+                    items = r_check.json()["data"].get("list", [])
+                    if items:
+                        latest = items[0]
+                        status = latest.get("status")
+                        
+                        if status == 1: # SUKSES
+                            vid_url = latest.get("output_url")
+                            file_name_output = f"video_ke_{i}.mp4"
+                            
+                            print(f"\n    [SUKSES] Video Jadi! Mendownload ke '{file_name_output}'...")
+                            with open(file_name_output, 'wb') as f:
+                                f.write(requests.get(vid_url).content)
+                            
+                            print("    -> Download selesai.")
+                            berhasil = True
+                            break # Keluar dari loop polling, lanjut ke video berikutnya
+                            
+                        elif status == 3: # GAGAL
+                            print("\n    [GAGAL] Server menolak task ini.")
+                            break
+            except:
+                pass
+        
+        if not berhasil:
+            print("\n    [TIMEOUT] Waktu habis untuk video ini. Lanjut ke berikutnya...")
+        
+        # Jeda sedikit antar video agar akun aman
+        time.sleep(2) 
+
+def run_automation():
+    if not os.path.exists(FILE_GAMBAR):
+        print(f"File {FILE_GAMBAR} tidak ditemukan!")
+        return
+
+    # INPUT JUMLAH LOOP
+    try:
+        jumlah = int(input("Ingin membuat berapa video? (Masukkan Angka): "))
+    except:
+        jumlah = 1
+
+    session = requests.Session()
+    session.headers.update(HEADERS)
+
+    # 1. LOGIN
+    if not login_sjinn(session): return
+
+    # 2. UPLOAD (Sekali saja)
+    uuid = upload_image(session)
+    if not uuid: return
+
+    # 3. LOOPING CREATE & DOWNLOAD
+    process_video_loop(session, uuid, jumlah)
+
+    print("\n=== SEMUA PROSES SELESAI ===")
+
+if __name__ == "__main__":
+    run_automation()
