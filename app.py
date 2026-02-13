@@ -14,11 +14,9 @@ st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wi
 
 st.title("🚀 Sjinn AI - Multi Task Generator")
 
-# --- FUNGSI CEK CREDITS (Dipanggil via Tombol) ---
+# --- FUNGSI CEK CREDITS (Dipanggil via Tombol Sidebar) ---
 def check_credits():
     email = st.session_state.get("u_email", "")
-    
-    # Ambil status checkbox
     is_same = st.session_state.get("use_same_pass", True)
     
     if is_same:
@@ -30,7 +28,7 @@ def check_credits():
         st.warning("Email belum diisi!")
         return
 
-    with st.spinner(""):
+    with st.spinner("Sedang Login & Cek Saldo..."):
         try:
             session_cred = requests.Session()
             # 1. Login Flow
@@ -50,6 +48,7 @@ def check_credits():
                     data = r_info.json()
                     balance = data.get('data', {}).get('balances', 0)
                     st.session_state["user_credits"] = balance
+                    st.toast("✅ Login Berhasil!", icon="🎉")
             else:
                 st.session_state["user_credits"] = "Login Gagal"
                 st.error("Login Gagal! Cek Email/Password.")
@@ -61,26 +60,21 @@ def check_credits():
 with st.sidebar:
     st.header("Account Config")
     
-    # 1. Input Email (Tanpa on_change, murni input)
     email_input = st.text_input("Email", key="u_email")
     
-    # --- LOGIKA POSISI PASSWORD ---
     if "use_same_pass" not in st.session_state:
         st.session_state.use_same_pass = True
 
-    # Jika checkbox TIDAK dicentang, render input password DULUAN
     if not st.session_state.use_same_pass:
         pass_input = st.text_input("Password", key="u_pass", type="password")
     else:
         pass_input = email_input
 
-    # Render Checkbox
     st.checkbox("Password same as email", key="use_same_pass")
     
-    st.write("") # Spasi dikit
+    st.write("") 
     
-    # --- TOMBOL LOGIN ---
-    if st.button("Login", type="primary", use_container_width=True):
+    if st.button("🚀 Login / Cek Data", type="primary", use_container_width=True):
         check_credits()
 
 # --- SISTEM TABS ---
@@ -88,13 +82,12 @@ tab1, tab2 = st.tabs(["🎥 Generate New", "📚 Account Gallery"])
 
 # --- TAB 1: GENERATE NEW ---
 with tab1:
-    # A. BAGIAN INFO CREDITS (Side by Side, Same Font Size)
+    # A. BAGIAN INFO CREDITS (Placeholder agar bisa update real-time)
+    credits_placeholder = st.empty()
     current_credits = st.session_state.get("user_credits", "---")
+    credits_placeholder.markdown(f"**💰 Sisa Credits Akun:** {current_credits}")
     
-    # Menggunakan Markdown agar sebaris dan tebal
-    st.markdown(f"**💰 Sisa Credits Akun:** {current_credits}")
-    
-    st.write("") # Spacer kecil agar tidak terlalu mepet ke input
+    st.write("") 
 
     # B. BAGIAN INPUT UTAMA
     c_prompt, c_count, c_delay = st.columns([4, 1, 1]) 
@@ -123,8 +116,7 @@ with tab1:
 
         log_status = st.status("🚀 Memulai Sistem...", expanded=True)
 
-        # 1. LOGIN (Menggunakan data dari input sidebar)
-        # Ambil ulang password yang benar berdasarkan state terakhir
+        # 1. LOGIN
         final_pass = email_input if st.session_state.use_same_pass else st.session_state.get("u_pass", "")
         
         log_status.write("🔐 Sedang Login...")
@@ -145,11 +137,13 @@ with tab1:
             st.error(f"Error Login: {e}")
             return
         
-        # Update credits real-time
+        # Update credits awal sebelum loop
         try:
             r_info = session.get("https://sjinn.ai/api/get_user_account")
             if r_info.status_code == 200:
-                st.session_state["user_credits"] = r_info.json().get('data', {}).get('balances', 0)
+                bal = r_info.json().get('data', {}).get('balances', 0)
+                st.session_state["user_credits"] = bal
+                credits_placeholder.markdown(f"**💰 Sisa Credits Akun:** {bal}")
         except: pass
 
         # 2. UPLOAD
@@ -185,6 +179,15 @@ with tab1:
                 if r_task.status_code == 200:
                     log_status.write(f"➕ Task #{i} dikirim...")
                     tasks_submitted += 1
+                    
+                    # [FITUR BARU] Update Credits Real-time Setelah Kirim Task
+                    try:
+                        r_upd = session.get("https://sjinn.ai/api/get_user_account")
+                        if r_upd.status_code == 200:
+                            new_bal = r_upd.json().get('data', {}).get('balances', 0)
+                            st.session_state["user_credits"] = new_bal
+                            credits_placeholder.markdown(f"**💰 Sisa Credits Akun:** {new_bal}")
+                    except: pass
                 
                 progress_bar.progress(int((i / loop_count) * 100))
                 
@@ -217,7 +220,7 @@ with tab1:
         
         log_status.update(label="✅ Selesai!", state="complete", expanded=False)
         st.balloons()
-        st.rerun()
+        # st.rerun() # Tidak perlu rerun agar hasil video tidak hilang
 
     if st.button("MULAI BATCH GENERATE", type="primary", use_container_width=True):
         process_batch()
