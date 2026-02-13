@@ -18,7 +18,7 @@ st.title("🚀 Sjinn AI - Multi Task Generator")
 def auto_check_credits():
     """Fungsi ini dipanggil otomatis saat input email/pass berubah"""
     email = st.session_state.get("u_email", "")
-    # Cek logika password (apakah sama dengan email atau tidak)
+    # Cek logika checkbox
     if st.session_state.get("use_same_pass", True):
         password = email
     else:
@@ -43,7 +43,7 @@ def auto_check_credits():
                 if r_info.status_code == 200:
                     data = r_info.json()
                     balance = data.get('data', {}).get('balances', 0)
-                    st.session_state["user_credits"] = balance # Simpan ke session
+                    st.session_state["user_credits"] = balance
             else:
                 st.session_state["user_credits"] = "Login Gagal"
         except:
@@ -53,41 +53,46 @@ def auto_check_credits():
 with st.sidebar:
     st.header("Account Config")
     
-    # Input Email dengan callback on_change
+    # 1. Input Email
     email_input = st.text_input("Email", key="u_email", on_change=auto_check_credits)
     
-    # Input Password
+    # 2. Checkbox (Password same as email)
     use_same = st.checkbox("Password same as email", value=True, key="use_same_pass", on_change=auto_check_credits)
     
+    # 3. Logika Tampilan Password
     if use_same:
+        # Jika dicentang: Password = Email, kolom input DI-HIDE (tidak muncul)
         pass_input = email_input
-        st.text_input("Password", value=pass_input, type="password", disabled=True)
     else:
+        # Jika tidak dicentang: Munculkan kolom password manual
         pass_input = st.text_input("Password", key="u_pass", type="password", on_change=auto_check_credits)
 
-# --- MENYIAPKAN JUDUL TABS ---
-# Default judul
-tab_gallery_title = "📚 Account Gallery"
-
-# Jika credits sudah berhasil diambil, tempelkan ke judul
-if "user_credits" in st.session_state:
-    credits = st.session_state["user_credits"]
-    if isinstance(credits, int) or isinstance(credits, float):
-        tab_gallery_title = f"📚 Account Gallery (💰 {credits})"
-    else:
-        tab_gallery_title = f"📚 Account Gallery ({credits})"
-
 # --- SISTEM TABS ---
-tab1, tab2 = st.tabs(["🎥 Generate New", tab_gallery_title])
+# Judul Tab 2 kembali standar karena credits pindah ke dalam layout
+tab1, tab2 = st.tabs(["🎥 Generate New", "📚 Account Gallery"])
 
 # --- TAB 1: GENERATE NEW ---
 with tab1:
+    # [MODIFIKASI: Menampilkan Credits di Atas Prompt]
+    current_credits = st.session_state.get("user_credits", "---")
+    
+    # Layout Kolom
     c1, c2, c3 = st.columns([3, 1, 1]) 
+    
     with c1:
+        # Tampilan Credits menggunakan Metric agar terlihat jelas di atas Prompt
+        st.metric(label="💰 Sisa Credits Akun", value=current_credits)
         prompt_input = st.text_input("Prompt Video", value="", placeholder="e.g. she is waving")
+        
     with c2:
+        # Spacer agar sejajar dengan input prompt di bawah metric
+        st.write("") 
+        st.write("")
         loop_count = st.number_input("Jumlah Video", min_value=1, max_value=50, value=1, step=1)
+        
     with c3:
+        st.write("")
+        st.write("")
         delay_sec = st.number_input("Jeda Kirim (detik)", min_value=1, max_value=60, value=5, step=1)
 
     uploaded_file = st.file_uploader("Pilih Gambar (.png/.jpg)", type=['png', 'jpg', 'jpeg'])
@@ -124,7 +129,7 @@ with tab1:
             st.error(f"Error Login: {e}")
             return
         
-        # Update credits setelah login berhasil untuk akurasi terbaru
+        # Update credits real-time setelah login
         try:
             r_info = session.get("https://sjinn.ai/api/get_user_account")
             if r_info.status_code == 200:
@@ -196,8 +201,6 @@ with tab1:
         
         log_status.update(label="✅ Selesai!", state="complete", expanded=False)
         st.balloons()
-        
-        # Refresh credits di akhir proses
         st.rerun()
 
     if st.button("MULAI BATCH GENERATE", type="primary", use_container_width=True):
@@ -220,7 +223,7 @@ with tab2:
                     payload = {"redirect": "false", "email": email_input, "password": pass_input, "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"}
                     session_gal.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
                     
-                    # Update credits saat refresh gallery
+                    # Update credits
                     r_info = session_gal.get("https://sjinn.ai/api/get_user_account")
                     if r_info.status_code == 200:
                         st.session_state["user_credits"] = r_info.json().get('data', {}).get('balances', 0)
