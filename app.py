@@ -45,7 +45,7 @@ with tab1:
         loop_count = st.number_input("Jumlah Video", min_value=1, max_value=50, value=1, step=1)
     with c3:
         # Input untuk Custom Delay
-        delay_sec = st.number_input("Jeda Kirim (detik)", min_value=1, max_value=60, value=5, step=1, help="Waktu tunggu antar request task")
+        delay_sec = st.number_input("Delay (detik)", min_value=1, max_value=60, value=5, step=1, help="Jeda kirim antar task")
 
     uploaded_file = st.file_uploader("Pilih Gambar (.png/.jpg)", type=['png', 'jpg', 'jpeg'])
 
@@ -82,7 +82,7 @@ with tab1:
             return
 
         # 2. UPLOAD
-        log_status.write("📤 Mengupload Gambar Master...")
+        log_status.write("📤 Uploading Image..")
         try:
             mime_type = uploaded_file.type
             r_init = session.post("https://sjinn.ai/api/upload_file", json={"content_type": mime_type})
