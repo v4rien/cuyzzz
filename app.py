@@ -260,7 +260,7 @@ with tab2:
                         if not all_videos:
                             st.info("Gallery kosong. Belum ada video yang ditemukan.")
                         else:
-                            st.write(f"Ditemukan **{len(all_videos)}** video.")
+                            st.success(f"Ditemukan **{len(all_videos)}** video.")
                             gal_cols = st.columns(3)
                             for idx, vid in enumerate(all_videos):
                                 with gal_cols[idx % 3]:
