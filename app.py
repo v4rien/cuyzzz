@@ -48,7 +48,6 @@ def check_credits():
                     data = r_info.json()
                     balance = data.get('data', {}).get('balances', 0)
                     st.session_state["user_credits"] = balance
-                    st.toast("✅ Login Berhasil!", icon="🎉")
             else:
                 st.session_state["user_credits"] = "Login Gagal"
                 st.error("Login Gagal! Cek Email/Password.")
