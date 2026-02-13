@@ -18,8 +18,11 @@ st.title("🚀 Sjinn AI - Multi Task Generator")
 def auto_check_credits():
     """Fungsi ini dipanggil otomatis saat input email/pass berubah"""
     email = st.session_state.get("u_email", "")
-    # Cek logika checkbox
-    if st.session_state.get("use_same_pass", True):
+    
+    # Ambil status checkbox dari session state
+    is_same = st.session_state.get("use_same_pass", True)
+    
+    if is_same:
         password = email
     else:
         password = st.session_state.get("u_pass", "")
@@ -56,44 +59,43 @@ with st.sidebar:
     # 1. Input Email
     email_input = st.text_input("Email", key="u_email", on_change=auto_check_credits)
     
-    # 2. Checkbox (Password same as email)
-    use_same = st.checkbox("Password same as email", value=True, key="use_same_pass", on_change=auto_check_credits)
-    
-    # 3. Logika Tampilan Password
-    if use_same:
-        # Jika dicentang: Password = Email, kolom input DI-HIDE (tidak muncul)
-        pass_input = email_input
-    else:
-        # Jika tidak dicentang: Munculkan kolom password manual
+    # --- LOGIKA POSISI PASSWORD ---
+    # Pastikan state checkbox terinisialisasi
+    if "use_same_pass" not in st.session_state:
+        st.session_state.use_same_pass = True
+
+    # Jika checkbox TIDAK dicentang, render input password DULUAN (di atas checkbox)
+    if not st.session_state.use_same_pass:
         pass_input = st.text_input("Password", key="u_pass", type="password", on_change=auto_check_credits)
+    else:
+        pass_input = email_input
+
+    # Render Checkbox (posisi di bawah password manual jika muncul)
+    st.checkbox("Password same as email", key="use_same_pass", on_change=auto_check_credits)
 
 # --- SISTEM TABS ---
-# Judul Tab 2 kembali standar karena credits pindah ke dalam layout
 tab1, tab2 = st.tabs(["🎥 Generate New", "📚 Account Gallery"])
 
 # --- TAB 1: GENERATE NEW ---
 with tab1:
-    # [MODIFIKASI: Menampilkan Credits di Atas Prompt]
+    # A. BAGIAN INFO CREDITS (Baris tersendiri agar rapi)
     current_credits = st.session_state.get("user_credits", "---")
+    st.metric(label="💰 Sisa Credits Akun", value=current_credits)
     
-    # Layout Kolom
-    c1, c2, c3 = st.columns([3, 1, 1]) 
+    st.write("") # Spacer kecil
+
+    # B. BAGIAN INPUT UTAMA (Sejajar dalam satu baris)
+    # Rasio kolom diatur agar Prompt lebar, sisanya pas untuk angka
+    c_prompt, c_count, c_delay = st.columns([4, 1, 1]) 
     
-    with c1:
-        # Tampilan Credits menggunakan Metric agar terlihat jelas di atas Prompt
-        st.metric(label="💰 Sisa Credits Akun", value=current_credits)
-        prompt_input = st.text_input("Prompt Video", value="", placeholder="e.g. she is waving")
+    with c_prompt:
+        prompt_input = st.text_input("Prompt Video", value="", placeholder="Describe the motion...")
         
-    with c2:
-        # Spacer agar sejajar dengan input prompt di bawah metric
-        st.write("") 
-        st.write("")
-        loop_count = st.number_input("Jumlah Video", min_value=1, max_value=50, value=1, step=1)
+    with c_count:
+        loop_count = st.number_input("Jumlah", min_value=1, max_value=50, value=1, step=1)
         
-    with c3:
-        st.write("")
-        st.write("")
-        delay_sec = st.number_input("Jeda Kirim (detik)", min_value=1, max_value=60, value=5, step=1)
+    with c_delay:
+        delay_sec = st.number_input("Jeda (detik)", min_value=1, max_value=60, value=5, step=1)
 
     uploaded_file = st.file_uploader("Pilih Gambar (.png/.jpg)", type=['png', 'jpg', 'jpeg'])
 
@@ -129,7 +131,7 @@ with tab1:
             st.error(f"Error Login: {e}")
             return
         
-        # Update credits real-time setelah login
+        # Update credits real-time
         try:
             r_info = session.get("https://sjinn.ai/api/get_user_account")
             if r_info.status_code == 200:
