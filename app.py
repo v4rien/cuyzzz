@@ -74,7 +74,7 @@ with st.sidebar:
     
     st.write("") 
     
-    if st.button("🚀 Login / Cek Data", type="primary", use_container_width=True):
+    if st.button("Login", type="primary", use_container_width=True):
         check_credits()
 
 # --- SISTEM TABS ---
