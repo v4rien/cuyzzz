@@ -37,11 +37,15 @@ tab1, tab2 = st.tabs(["🎥 Generate New", "📚 Account Gallery"])
 
 # --- TAB 1: GENERATE NEW ---
 with tab1:
-    c1, c2 = st.columns([3, 1])
+    # [MODIFIKASI 1: Layout Kolom & Input Delay]
+    c1, c2, c3 = st.columns([3, 1, 1]) 
     with c1:
         prompt_input = st.text_input("Prompt Video", value="", placeholder="e.g. she is waving")
     with c2:
-        loop_count = st.number_input("Jumlah Video", min_value=1, max_value=20, value=1, step=1)
+        loop_count = st.number_input("Jumlah Video", min_value=1, max_value=50, value=1, step=1)
+    with c3:
+        # Input untuk Custom Delay
+        delay_sec = st.number_input("Jeda Kirim (detik)", min_value=1, max_value=60, value=5, step=1, help="Waktu tunggu antar request task")
 
     uploaded_file = st.file_uploader("Pilih Gambar (.png/.jpg)", type=['png', 'jpg', 'jpeg'])
 
@@ -99,19 +103,25 @@ with tab1:
         
         for i in range(1, loop_count + 1):
             try:
+                # [MODIFIKASI 2: Menghapus trik spasi pada prompt]
                 payload_task = {
                     "id": "sjinn-image-to-video",
-                    "input": {"image_url": file_uuid, "prompt": prompt_input},
+                    "input": {"image_url": file_uuid, "prompt": prompt_input}, # Prompt murni tanpa modifikasi
                     "mode": "template"
                 }
-                if i > 1: payload_task["input"]["prompt"] += " " * i 
+                
                 r_task = session.post("https://sjinn.ai/api/create_sjinn_image_to_video_task", json=payload_task)
                 
                 if r_task.status_code == 200:
                     log_status.write(f"➕ Task #{i} dikirim...")
                     tasks_submitted += 1
+                
                 progress_bar.progress(int((i / loop_count) * 100))
-                if i < loop_count: time.sleep(3)
+                
+                # [MODIFIKASI 3: Menggunakan variabel delay_sec]
+                if i < loop_count: 
+                    time.sleep(delay_sec) 
+
             except: pass
 
         # 4. MONITORING
