@@ -29,23 +29,56 @@ with st.sidebar:
     else:
         pass_input = st.text_input("Password", value="", type="password")
 
-    # 3. Kolom Centang (Di bawah Password)
+    # 3. Kolom Centang
     st.checkbox("Password same as email", value=True, key="use_same_pass")
+
+    st.divider()
+    
+    # --- FITUR BARU: CEK CREDITS ---
+    if st.button("💰 Cek Sisa Credits", use_container_width=True):
+        if not email_input or not pass_input:
+            st.error("Isi Email & Password dulu!")
+        else:
+            with st.spinner("Mengecek saldo..."):
+                try:
+                    session_cred = requests.Session()
+                    # Login Flow
+                    r_csrf = session_cred.get("https://sjinn.ai/api/auth/csrf")
+                    csrf_token = r_csrf.json().get("csrfToken")
+                    
+                    payload = {
+                        "redirect": "false", "email": email_input, "password": pass_input,
+                        "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"
+                    }
+                    r_login = session_cred.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
+                    
+                    if r_login.status_code == 200:
+                        # Get Account Info
+                        r_info = session_cred.get("https://sjinn.ai/api/get_user_account")
+                        if r_info.status_code == 200:
+                            data = r_info.json()
+                            balance = data.get('data', {}).get('balances', 0)
+                            st.success(f"✅ Login Berhasil")
+                            st.metric(label="Sisa Credits Anda", value=balance)
+                        else:
+                            st.error(f"Gagal ambil data: {r_info.status_code}")
+                    else:
+                        st.error("Login Gagal! Cek password.")
+                except Exception as e:
+                    st.error(f"Error: {e}")
 
 # --- SISTEM TABS ---
 tab1, tab2 = st.tabs(["🎥 Generate New", "📚 Account Gallery"])
 
 # --- TAB 1: GENERATE NEW ---
 with tab1:
-    # [MODIFIKASI 1: Layout Kolom & Input Delay]
     c1, c2, c3 = st.columns([3, 1, 1]) 
     with c1:
         prompt_input = st.text_input("Prompt Video", value="", placeholder="e.g. she is waving")
     with c2:
         loop_count = st.number_input("Jumlah Video", min_value=1, max_value=50, value=1, step=1)
     with c3:
-        # Input untuk Custom Delay
-        delay_sec = st.number_input("Delay (detik)", min_value=1, max_value=60, value=5, step=1, help="Jeda kirim antar task")
+        delay_sec = st.number_input("Jeda Kirim (detik)", min_value=1, max_value=60, value=5, step=1, help="Waktu tunggu antar request task")
 
     uploaded_file = st.file_uploader("Pilih Gambar (.png/.jpg)", type=['png', 'jpg', 'jpeg'])
 
@@ -82,7 +115,7 @@ with tab1:
             return
 
         # 2. UPLOAD
-        log_status.write("📤 Uploading Image..")
+        log_status.write("📤 Mengupload Gambar Master...")
         try:
             mime_type = uploaded_file.type
             r_init = session.post("https://sjinn.ai/api/upload_file", json={"content_type": mime_type})
@@ -103,10 +136,9 @@ with tab1:
         
         for i in range(1, loop_count + 1):
             try:
-                # [MODIFIKASI 2: Menghapus trik spasi pada prompt]
                 payload_task = {
                     "id": "sjinn-image-to-video",
-                    "input": {"image_url": file_uuid, "prompt": prompt_input}, # Prompt murni tanpa modifikasi
+                    "input": {"image_url": file_uuid, "prompt": prompt_input},
                     "mode": "template"
                 }
                 
@@ -118,7 +150,6 @@ with tab1:
                 
                 progress_bar.progress(int((i / loop_count) * 100))
                 
-                # [MODIFIKASI 3: Menggunakan variabel delay_sec]
                 if i < loop_count: 
                     time.sleep(delay_sec) 
 
