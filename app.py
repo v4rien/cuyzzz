@@ -30,7 +30,7 @@ def check_credits():
         st.warning("Email belum diisi!")
         return
 
-    with st.spinner("Sedang Login & Cek Saldo..."):
+    with st.spinner:
         try:
             session_cred = requests.Session()
             # 1. Login Flow
@@ -50,7 +50,6 @@ def check_credits():
                     data = r_info.json()
                     balance = data.get('data', {}).get('balances', 0)
                     st.session_state["user_credits"] = balance
-                    st.toast("✅ Login Berhasil!", icon="🎉")
             else:
                 st.session_state["user_credits"] = "Login Gagal"
                 st.error("Login Gagal! Cek Email/Password.")
@@ -81,7 +80,7 @@ with st.sidebar:
     st.write("") # Spasi dikit
     
     # --- TOMBOL LOGIN ---
-    if st.button("🚀 Login / Cek Data", type="primary", use_container_width=True):
+    if st.button("Login", type="primary", use_container_width=True):
         check_credits()
 
 # --- SISTEM TABS ---
