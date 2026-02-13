@@ -1,11 +1,10 @@
 import streamlit as st
 import requests
 import time
-import mimetypes
 import socket
 import requests.packages.urllib3.util.connection as urllib3_cn
 
-# --- FIX IPV4 (Agar Upload Cepat & Stabil) ---
+# --- FIX IPV4 ---
 def allowed_gai_family():
     return socket.AF_INET
 urllib3_cn.allowed_gai_family = allowed_gai_family
@@ -15,60 +14,71 @@ st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wi
 
 st.title("🚀 Sjinn AI - Multi Task Generator")
 
+# --- FUNGSI AUTO CEK CREDITS ---
+def auto_check_credits():
+    """Fungsi ini dipanggil otomatis saat input email/pass berubah"""
+    email = st.session_state.get("u_email", "")
+    # Cek logika password (apakah sama dengan email atau tidak)
+    if st.session_state.get("use_same_pass", True):
+        password = email
+    else:
+        password = st.session_state.get("u_pass", "")
+
+    if email and password:
+        try:
+            session_cred = requests.Session()
+            # 1. Login Flow
+            r_csrf = session_cred.get("https://sjinn.ai/api/auth/csrf")
+            csrf_token = r_csrf.json().get("csrfToken")
+            
+            payload = {
+                "redirect": "false", "email": email, "password": password,
+                "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"
+            }
+            r_login = session_cred.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
+            
+            if r_login.status_code == 200:
+                # 2. Get Account Info
+                r_info = session_cred.get("https://sjinn.ai/api/get_user_account")
+                if r_info.status_code == 200:
+                    data = r_info.json()
+                    balance = data.get('data', {}).get('balances', 0)
+                    st.session_state["user_credits"] = balance # Simpan ke session
+            else:
+                st.session_state["user_credits"] = "Login Gagal"
+        except:
+            st.session_state["user_credits"] = "Error"
+
 # --- SIDEBAR (PENGATURAN AKUN) ---
 with st.sidebar:
     st.header("Account Config")
     
-    # 1. Input Email
-    email_input = st.text_input("Email", value="")
+    # Input Email dengan callback on_change
+    email_input = st.text_input("Email", key="u_email", on_change=auto_check_credits)
     
-    # 2. Input Password (Muncul di atas Centang)
-    if "use_same_pass" in st.session_state and st.session_state.use_same_pass:
+    # Input Password
+    use_same = st.checkbox("Password same as email", value=True, key="use_same_pass", on_change=auto_check_credits)
+    
+    if use_same:
         pass_input = email_input
         st.text_input("Password", value=pass_input, type="password", disabled=True)
     else:
-        pass_input = st.text_input("Password", value="", type="password")
+        pass_input = st.text_input("Password", key="u_pass", type="password", on_change=auto_check_credits)
 
-    # 3. Kolom Centang
-    st.checkbox("Password same as email", value=True, key="use_same_pass")
+# --- MENYIAPKAN JUDUL TABS ---
+# Default judul
+tab_gallery_title = "📚 Account Gallery"
 
-    st.divider()
-    
-    # --- FITUR BARU: CEK CREDITS ---
-    if st.button("💰 Cek Sisa Credits", use_container_width=True):
-        if not email_input or not pass_input:
-            st.error("Isi Email & Password dulu!")
-        else:
-            with st.spinner("Mengecek saldo..."):
-                try:
-                    session_cred = requests.Session()
-                    # Login Flow
-                    r_csrf = session_cred.get("https://sjinn.ai/api/auth/csrf")
-                    csrf_token = r_csrf.json().get("csrfToken")
-                    
-                    payload = {
-                        "redirect": "false", "email": email_input, "password": pass_input,
-                        "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"
-                    }
-                    r_login = session_cred.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
-                    
-                    if r_login.status_code == 200:
-                        # Get Account Info
-                        r_info = session_cred.get("https://sjinn.ai/api/get_user_account")
-                        if r_info.status_code == 200:
-                            data = r_info.json()
-                            balance = data.get('data', {}).get('balances', 0)
-                            st.success(f"✅ Login Berhasil")
-                            st.metric(label="Sisa Credits Anda", value=balance)
-                        else:
-                            st.error(f"Gagal ambil data: {r_info.status_code}")
-                    else:
-                        st.error("Login Gagal! Cek password.")
-                except Exception as e:
-                    st.error(f"Error: {e}")
+# Jika credits sudah berhasil diambil, tempelkan ke judul
+if "user_credits" in st.session_state:
+    credits = st.session_state["user_credits"]
+    if isinstance(credits, int) or isinstance(credits, float):
+        tab_gallery_title = f"📚 Account Gallery (💰 {credits})"
+    else:
+        tab_gallery_title = f"📚 Account Gallery ({credits})"
 
 # --- SISTEM TABS ---
-tab1, tab2 = st.tabs(["🎥 Generate New", "📚 Account Gallery"])
+tab1, tab2 = st.tabs(["🎥 Generate New", tab_gallery_title])
 
 # --- TAB 1: GENERATE NEW ---
 with tab1:
@@ -78,7 +88,7 @@ with tab1:
     with c2:
         loop_count = st.number_input("Jumlah Video", min_value=1, max_value=50, value=1, step=1)
     with c3:
-        delay_sec = st.number_input("Jeda Kirim (detik)", min_value=1, max_value=60, value=5, step=1, help="Waktu tunggu antar request task")
+        delay_sec = st.number_input("Jeda Kirim (detik)", min_value=1, max_value=60, value=5, step=1)
 
     uploaded_file = st.file_uploader("Pilih Gambar (.png/.jpg)", type=['png', 'jpg', 'jpeg'])
 
@@ -113,6 +123,13 @@ with tab1:
         except Exception as e:
             st.error(f"Error Login: {e}")
             return
+        
+        # Update credits setelah login berhasil untuk akurasi terbaru
+        try:
+            r_info = session.get("https://sjinn.ai/api/get_user_account")
+            if r_info.status_code == 200:
+                st.session_state["user_credits"] = r_info.json().get('data', {}).get('balances', 0)
+        except: pass
 
         # 2. UPLOAD
         log_status.write("📤 Mengupload Gambar Master...")
@@ -179,13 +196,15 @@ with tab1:
         
         log_status.update(label="✅ Selesai!", state="complete", expanded=False)
         st.balloons()
+        
+        # Refresh credits di akhir proses
+        st.rerun()
 
     if st.button("MULAI BATCH GENERATE", type="primary", use_container_width=True):
         process_batch()
 
 # --- TAB 2: ACCOUNT GALLERY ---
 with tab2:
-    st.subheader("📚 Riwayat Video Akun")
     st.write("Klik tombol di bawah untuk memuat semua video yang pernah Anda buat di akun ini.")
     
     if st.button("🔄 Refresh / Muat Gallery", use_container_width=True):
@@ -201,6 +220,11 @@ with tab2:
                     payload = {"redirect": "false", "email": email_input, "password": pass_input, "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"}
                     session_gal.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
                     
+                    # Update credits saat refresh gallery
+                    r_info = session_gal.get("https://sjinn.ai/api/get_user_account")
+                    if r_info.status_code == 200:
+                        st.session_state["user_credits"] = r_info.json().get('data', {}).get('balances', 0)
+
                     # Request List Video
                     r_list = session_gal.post("https://sjinn.ai/api/query_app_general_list", json={"id": "sjinn-image-to-video"})
                     
