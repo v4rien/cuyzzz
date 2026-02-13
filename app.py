@@ -14,12 +14,11 @@ st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wi
 
 st.title("🚀 Sjinn AI - Multi Task Generator")
 
-# --- FUNGSI AUTO CEK CREDITS ---
-def auto_check_credits():
-    """Fungsi ini dipanggil otomatis saat input email/pass berubah"""
+# --- FUNGSI CEK CREDITS (Dipanggil via Tombol) ---
+def check_credits():
     email = st.session_state.get("u_email", "")
     
-    # Ambil status checkbox dari session state
+    # Ambil status checkbox
     is_same = st.session_state.get("use_same_pass", True)
     
     if is_same:
@@ -27,7 +26,11 @@ def auto_check_credits():
     else:
         password = st.session_state.get("u_pass", "")
 
-    if email and password:
+    if not email:
+        st.warning("Email belum diisi!")
+        return
+
+    with st.spinner("Sedang Login & Cek Saldo..."):
         try:
             session_cred = requests.Session()
             # 1. Login Flow
@@ -47,45 +50,54 @@ def auto_check_credits():
                     data = r_info.json()
                     balance = data.get('data', {}).get('balances', 0)
                     st.session_state["user_credits"] = balance
+                    st.toast("✅ Login Berhasil!", icon="🎉")
             else:
                 st.session_state["user_credits"] = "Login Gagal"
-        except:
+                st.error("Login Gagal! Cek Email/Password.")
+        except Exception as e:
             st.session_state["user_credits"] = "Error"
+            st.error(f"Error Koneksi: {e}")
 
 # --- SIDEBAR (PENGATURAN AKUN) ---
 with st.sidebar:
     st.header("Account Config")
     
-    # 1. Input Email
-    email_input = st.text_input("Email", key="u_email", on_change=auto_check_credits)
+    # 1. Input Email (Tanpa on_change, murni input)
+    email_input = st.text_input("Email", key="u_email")
     
     # --- LOGIKA POSISI PASSWORD ---
-    # Pastikan state checkbox terinisialisasi
     if "use_same_pass" not in st.session_state:
         st.session_state.use_same_pass = True
 
-    # Jika checkbox TIDAK dicentang, render input password DULUAN (di atas checkbox)
+    # Jika checkbox TIDAK dicentang, render input password DULUAN
     if not st.session_state.use_same_pass:
-        pass_input = st.text_input("Password", key="u_pass", type="password", on_change=auto_check_credits)
+        pass_input = st.text_input("Password", key="u_pass", type="password")
     else:
         pass_input = email_input
 
-    # Render Checkbox (posisi di bawah password manual jika muncul)
-    st.checkbox("Password same as email", key="use_same_pass", on_change=auto_check_credits)
+    # Render Checkbox
+    st.checkbox("Password same as email", key="use_same_pass")
+    
+    st.write("") # Spasi dikit
+    
+    # --- TOMBOL LOGIN ---
+    if st.button("🚀 Login / Cek Data", type="primary", use_container_width=True):
+        check_credits()
 
 # --- SISTEM TABS ---
 tab1, tab2 = st.tabs(["🎥 Generate New", "📚 Account Gallery"])
 
 # --- TAB 1: GENERATE NEW ---
 with tab1:
-    # A. BAGIAN INFO CREDITS (Baris tersendiri agar rapi)
+    # A. BAGIAN INFO CREDITS (Side by Side, Same Font Size)
     current_credits = st.session_state.get("user_credits", "---")
-    st.metric(label="💰 Sisa Credits Akun", value=current_credits)
     
-    st.write("") # Spacer kecil
+    # Menggunakan Markdown agar sebaris dan tebal
+    st.markdown(f"**💰 Sisa Credits Akun:** {current_credits}")
+    
+    st.write("") # Spacer kecil agar tidak terlalu mepet ke input
 
-    # B. BAGIAN INPUT UTAMA (Sejajar dalam satu baris)
-    # Rasio kolom diatur agar Prompt lebar, sisanya pas untuk angka
+    # B. BAGIAN INPUT UTAMA
     c_prompt, c_count, c_delay = st.columns([4, 1, 1]) 
     
     with c_prompt:
@@ -112,14 +124,17 @@ with tab1:
 
         log_status = st.status("🚀 Memulai Sistem...", expanded=True)
 
-        # 1. LOGIN
+        # 1. LOGIN (Menggunakan data dari input sidebar)
+        # Ambil ulang password yang benar berdasarkan state terakhir
+        final_pass = email_input if st.session_state.use_same_pass else st.session_state.get("u_pass", "")
+        
         log_status.write("🔐 Sedang Login...")
         try:
             r_csrf = session.get("https://sjinn.ai/api/auth/csrf")
             csrf_token = r_csrf.json().get("csrfToken")
             
             payload = {
-                "redirect": "false", "email": email_input, "password": pass_input,
+                "redirect": "false", "email": email_input, "password": final_pass,
                 "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"
             }
             r_login = session.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
@@ -213,16 +228,18 @@ with tab2:
     st.write("Klik tombol di bawah untuk memuat semua video yang pernah Anda buat di akun ini.")
     
     if st.button("🔄 Refresh / Muat Gallery", use_container_width=True):
-        if not email_input or not pass_input:
-            st.error("Silakan isi Email & Password di sidebar terlebih dahulu!")
+        if not email_input:
+            st.error("Silakan isi Email & Password di sidebar, lalu klik Login!")
         else:
+            final_pass = email_input if st.session_state.use_same_pass else st.session_state.get("u_pass", "")
+            
             with st.spinner("Mengambil data dari server..."):
                 session_gal = requests.Session()
                 try:
                     # Login Singkat
                     r_csrf = session_gal.get("https://sjinn.ai/api/auth/csrf")
                     csrf_token = r_csrf.json().get("csrfToken")
-                    payload = {"redirect": "false", "email": email_input, "password": pass_input, "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"}
+                    payload = {"redirect": "false", "email": email_input, "password": final_pass, "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"}
                     session_gal.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
                     
                     # Update credits
