@@ -30,7 +30,7 @@ def check_credits():
         st.warning("Email belum diisi!")
         return
 
-    with st.spinner:
+    with st.spinner(""):
         try:
             session_cred = requests.Session()
             # 1. Login Flow
