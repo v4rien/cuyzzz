@@ -82,10 +82,12 @@ tab1, tab2 = st.tabs(["🎥 Generate New", "📚 Account Gallery"])
 
 # --- TAB 1: GENERATE NEW ---
 with tab1:
-    # A. BAGIAN INFO CREDITS (Placeholder agar bisa update real-time)
+    # [MODIFIKASI] Tampilan Credits dalam Box (st.info)
     credits_placeholder = st.empty()
     current_credits = st.session_state.get("user_credits", "---")
-    credits_placeholder.markdown(f"**💰 Sisa Credits Akun:** {current_credits}")
+    
+    # Menggunakan st.info untuk membuat box berwarna
+    credits_placeholder.info(f"**Sisa Credits Akun:** {current_credits}", icon="💰")
     
     st.write("") 
 
@@ -143,7 +145,8 @@ with tab1:
             if r_info.status_code == 200:
                 bal = r_info.json().get('data', {}).get('balances', 0)
                 st.session_state["user_credits"] = bal
-                credits_placeholder.markdown(f"**💰 Sisa Credits Akun:** {bal}")
+                # Update box credits real-time
+                credits_placeholder.info(f"**Sisa Credits Akun:** {bal}", icon="💰")
         except: pass
 
         # 2. UPLOAD
@@ -180,13 +183,14 @@ with tab1:
                     log_status.write(f"➕ Task #{i} dikirim...")
                     tasks_submitted += 1
                     
-                    # [FITUR BARU] Update Credits Real-time Setelah Kirim Task
+                    # Update Credits Real-time Setelah Kirim Task
                     try:
                         r_upd = session.get("https://sjinn.ai/api/get_user_account")
                         if r_upd.status_code == 200:
                             new_bal = r_upd.json().get('data', {}).get('balances', 0)
                             st.session_state["user_credits"] = new_bal
-                            credits_placeholder.markdown(f"**💰 Sisa Credits Akun:** {new_bal}")
+                            # Update box credits real-time
+                            credits_placeholder.info(f"**Sisa Credits Akun:** {new_bal}", icon="💰")
                     except: pass
                 
                 progress_bar.progress(int((i / loop_count) * 100))
@@ -220,7 +224,6 @@ with tab1:
         
         log_status.update(label="✅ Selesai!", state="complete", expanded=False)
         st.balloons()
-        # st.rerun() # Tidak perlu rerun agar hasil video tidak hilang
 
     if st.button("MULAI BATCH GENERATE", type="primary", use_container_width=True):
         process_batch()
