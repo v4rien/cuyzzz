@@ -230,9 +230,9 @@ with tab1:
 
 # --- TAB 2: ACCOUNT GALLERY ---
 with tab2:
-    st.info("Klik tombol di bawah untuk memuat semua video yang pernah Anda buat di akun ini.")
+    st.info("Klik tombol di bawah untuk memuat semua video yang pernah dibuat di akun ini.")
     
-    if st.button("🔄 Refresh / Muat Gallery", use_container_width=True):
+    if st.button("Refresh / Muat Gallery", use_container_width=True):
         if not email_input:
             st.error("Silakan isi Email & Password di sidebar, lalu klik Login!")
         else:
