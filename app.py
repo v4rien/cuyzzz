@@ -190,7 +190,7 @@ def check_credits(manual_email=None, manual_pass=None):
             st.session_state["user_credits"] = "Error"
             st.error(f"Error Koneksi: {e}")
 
-# --- SIDEBAR ---
+# --- SIDEBAR (INPUT AKUN) ---
 with st.sidebar:
     st.header("Account Config")
     st.caption("Akun yang sedang aktif digunakan:")
@@ -287,6 +287,7 @@ with tab1:
             st.error(f"Error Login: {e}")
             return
         
+        # Update credits awal
         try:
             r_info = session.get("https://sjinn.ai/api/get_user_account")
             if r_info.status_code == 200:
@@ -377,16 +378,22 @@ with tab2:
     st.subheader("⚡ Auto Register & Verify Account")
     st.info("Akun yang berhasil dibuat akan otomatis dikirim ke Telegram Bot Anda.", icon="✈️")
     
-    # --- MENAMPILKAN LOG HASIL GENERATE (PERSISTEN) ---
+    # --- MENAMPILKAN LOG HASIL GENERATE DENGAN TOMBOL COPY ---
     if "new_account_log" in st.session_state:
-        # Tampilkan box sukses permanen di atas tombol
         acc_data = st.session_state["new_account_log"]
-        st.success(
-            f"✅ **Akun Terakhir Dibuat:**\n"
-            f"- Email: `{acc_data['email']}`\n"
-            f"- Pass: `{acc_data['pass']}`\n"
-            f"- Time: {acc_data['time']}"
-        )
+        
+        st.success(f"✅ **Akun Berhasil Dibuat** ({acc_data['time']})")
+        
+        # Layout Kolom untuk Copy
+        c_email, c_pass = st.columns(2)
+        with c_email:
+            st.caption("📧 Email (Hover untuk copy)")
+            st.code(acc_data['email'], language="text") # st.code punya tombol copy built-in
+        with c_pass:
+            st.caption("🔑 Password (Hover untuk copy)")
+            st.code(acc_data['pass'], language="text")
+        
+        st.divider()
     
     col_auto1, col_auto2 = st.columns([1, 2])
     
@@ -399,14 +406,14 @@ with tab2:
                 st.session_state["u_pass"] = new_pass
                 st.session_state["use_same_pass"] = True 
 
-                # 2. SIMPAN LOG SUKSES (Agar muncul setelah rerun)
+                # 2. SIMPAN LOG SUKSES
                 st.session_state["new_account_log"] = {
                     "email": new_email,
                     "pass": new_pass,
                     "time": datetime.now().strftime("%H:%M:%S")
                 }
 
-                # 3. RESET WIDGET STATE (Kunci agar tidak crash)
+                # 3. RESET WIDGET STATE
                 if "u_email_input" in st.session_state:
                     del st.session_state["u_email_input"]
                 if "chk_pass_widget" in st.session_state:
@@ -415,7 +422,6 @@ with tab2:
                 # 4. Cek saldo otomatis
                 check_credits(manual_email=new_email, manual_pass=new_pass)
                 
-                # 5. Rerun untuk update sidebar
                 st.rerun()
 
 # --- TAB 3: ACCOUNT GALLERY ---
