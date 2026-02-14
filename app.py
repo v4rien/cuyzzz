@@ -151,12 +151,10 @@ def process_auto_create():
 
 # --- FUNGSI CEK CREDITS ---
 def check_credits(manual_email=None, manual_pass=None):
-    # Logika penentuan email/pass
     if manual_email and manual_pass:
         email, password = manual_email, manual_pass
     else:
         email = st.session_state.get("u_email", "")
-        # Gunakan variable state, BUKAN key widget
         if st.session_state.get("use_same_pass", True):
             password = email
         else:
@@ -192,7 +190,7 @@ def check_credits(manual_email=None, manual_pass=None):
             st.session_state["user_credits"] = "Error"
             st.error(f"Error Koneksi: {e}")
 
-# --- SIDEBAR (INPUT AKUN) ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("Account Config")
     st.caption("Akun yang sedang aktif digunakan:")
@@ -201,7 +199,6 @@ with st.sidebar:
     def_email = st.session_state.get("u_email", "")
     email_input = st.text_input("Email", value=def_email, key="u_email_input")
     
-    # Update state jika user ngetik manual
     if email_input != st.session_state.get("u_email", ""):
         st.session_state["u_email"] = email_input
 
@@ -257,7 +254,6 @@ with tab1:
             return
         
         target_email = st.session_state.get("u_email", "")
-        # Gunakan logic state, bukan widget key
         target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
         
         if not target_email:
@@ -291,7 +287,6 @@ with tab1:
             st.error(f"Error Login: {e}")
             return
         
-        # Update credits awal
         try:
             r_info = session.get("https://sjinn.ai/api/get_user_account")
             if r_info.status_code == 200:
@@ -382,30 +377,45 @@ with tab2:
     st.subheader("⚡ Auto Register & Verify Account")
     st.info("Akun yang berhasil dibuat akan otomatis dikirim ke Telegram Bot Anda.", icon="✈️")
     
+    # --- MENAMPILKAN LOG HASIL GENERATE (PERSISTEN) ---
+    if "new_account_log" in st.session_state:
+        # Tampilkan box sukses permanen di atas tombol
+        acc_data = st.session_state["new_account_log"]
+        st.success(
+            f"✅ **Akun Terakhir Dibuat:**\n"
+            f"- Email: `{acc_data['email']}`\n"
+            f"- Pass: `{acc_data['pass']}`\n"
+            f"- Time: {acc_data['time']}"
+        )
+    
     col_auto1, col_auto2 = st.columns([1, 2])
     
     with col_auto1:
         if st.button("🛠️ Generate Akun Baru", type="primary", use_container_width=True):
             new_email, new_pass = process_auto_create()
             if new_email:
-                # 1. Update Logical Variables
+                # 1. Update Variable Data Utama
                 st.session_state["u_email"] = new_email
                 st.session_state["u_pass"] = new_pass
                 st.session_state["use_same_pass"] = True 
 
-                # 2. RESET WIDGET STATE (Kunci agar tidak crash)
-                # Kita hapus state widget agar widget dirender ulang dengan value baru dari "u_email"
+                # 2. SIMPAN LOG SUKSES (Agar muncul setelah rerun)
+                st.session_state["new_account_log"] = {
+                    "email": new_email,
+                    "pass": new_pass,
+                    "time": datetime.now().strftime("%H:%M:%S")
+                }
+
+                # 3. RESET WIDGET STATE (Kunci agar tidak crash)
                 if "u_email_input" in st.session_state:
                     del st.session_state["u_email_input"]
-                
                 if "chk_pass_widget" in st.session_state:
                     del st.session_state["chk_pass_widget"]
                 
-                # 3. Cek saldo otomatis
+                # 4. Cek saldo otomatis
                 check_credits(manual_email=new_email, manual_pass=new_pass)
                 
-                st.success(f"Akun **{new_email}** siap! Cek Telegram Anda.")
-                time.sleep(1)
+                # 5. Rerun untuk update sidebar
                 st.rerun()
 
 # --- TAB 3: ACCOUNT GALLERY ---
@@ -414,7 +424,6 @@ with tab3:
     
     if st.button("🔄 Refresh / Muat Gallery", use_container_width=True):
         target_email = st.session_state.get("u_email", "")
-        # Gunakan logic state, bukan widget key
         target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
 
         if not target_email:
