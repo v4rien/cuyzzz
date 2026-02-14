@@ -3,7 +3,7 @@ import requests
 import time
 import socket
 import re
-import cloudscraper # Library baru dari script gas.py
+import cloudscraper
 import requests.packages.urllib3.util.connection as urllib3_cn
 
 # --- FIX IPV4 ---
@@ -16,7 +16,7 @@ st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wi
 
 st.title("🚀 Sjinn AI - Multi Task Generator")
 
-# --- FUNGSI AUTO CREATE ACCOUNT (Dari gas.py) ---
+# --- FUNGSI AUTO CREATE ACCOUNT ---
 def process_auto_create():
     """Melakukan registrasi otomatis menggunakan cloudscraper & mailticking"""
     status_container = st.status("🛠️ Sedang Membuat Akun Baru...", expanded=True)
@@ -121,14 +121,12 @@ def process_auto_create():
         status_container.update(label=f"❌ Error System: {e}", state="error")
         return None, None
 
-# --- FUNGSI CEK CREDITS (Manual) ---
+# --- FUNGSI CEK CREDITS ---
 def check_credits(manual_email=None, manual_pass=None):
-    # Tentukan sumber kredensial
     if manual_email and manual_pass:
         email, password = manual_email, manual_pass
     else:
         email = st.session_state.get("u_email", "")
-        # Cek apakah password disamakan
         if st.session_state.get("use_same_pass", True):
             password = email
         else:
@@ -141,7 +139,7 @@ def check_credits(manual_email=None, manual_pass=None):
     with st.spinner("Sedang Login & Cek Saldo..."):
         try:
             session_cred = requests.Session()
-            # 1. Login Flow
+            # Login Flow
             r_csrf = session_cred.get("https://sjinn.ai/api/auth/csrf")
             csrf_token = r_csrf.json().get("csrfToken")
             
@@ -152,7 +150,7 @@ def check_credits(manual_email=None, manual_pass=None):
             r_login = session_cred.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
             
             if r_login.status_code == 200:
-                # 2. Get Account Info
+                # Get Account Info
                 r_info = session_cred.get("https://sjinn.ai/api/get_user_account")
                 if r_info.status_code == 200:
                     data = r_info.json()
@@ -166,44 +164,25 @@ def check_credits(manual_email=None, manual_pass=None):
             st.session_state["user_credits"] = "Error"
             st.error(f"Error Koneksi: {e}")
 
-# --- SIDEBAR (PENGATURAN AKUN) ---
+# --- SIDEBAR (INPUT AKUN AKTIF) ---
 with st.sidebar:
     st.header("Account Config")
+    st.caption("Akun yang sedang aktif digunakan:")
     
-    # [FITUR BARU] Checkbox Auto Create
-    use_auto_create = st.checkbox("⚡ Auto Create New Account", value=False)
-    
-    st.divider()
-
-    if use_auto_create:
-        st.info("Fitur ini akan membuat akun Sjinn baru menggunakan Temp Mail, memverifikasinya, lalu otomatis login.")
-        if st.button("🛠️ Generate & Register Account", type="primary", use_container_width=True):
-            new_email, new_pass = process_auto_create()
-            if new_email:
-                # Simpan ke session state agar form terisi otomatis
-                st.session_state["u_email"] = new_email
-                st.session_state["u_pass"] = new_pass
-                st.session_state["use_same_pass"] = True # Password = Email
-                
-                # Auto cek credits setelah berhasil buat akun
-                check_credits(manual_email=new_email, manual_pass=new_pass)
-                st.rerun()
-    
-    # INPUT MANUAL (Tetap dipertahankan)
-    # Jika hasil generate ada, isi value dari session state
+    # Value default dari session state
     def_email = st.session_state.get("u_email", "")
     
+    # Input Email
     email_input = st.text_input("Email", value=def_email, key="u_email_input")
     
-    # Sinkronisasi input manual ke session state utama jika user mengetik manual
+    # Sinkronisasi jika user mengetik manual
     if email_input != st.session_state.get("u_email", ""):
         st.session_state["u_email"] = email_input
 
-    # Logika Password
+    # Logika Checkbox Password
     if "use_same_pass" not in st.session_state:
         st.session_state.use_same_pass = True
 
-    # Jika checkbox TIDAK dicentang, render input password manual
     if not st.session_state.use_same_pass:
         pass_input = st.text_input("Password", key="u_pass", type="password")
     else:
@@ -213,23 +192,21 @@ with st.sidebar:
     
     st.write("") 
     
-    # Tombol Login Manual (berguna jika tidak pakai auto create atau mau refresh)
     if st.button("🚀 Login / Cek Data", use_container_width=True):
         check_credits()
 
-# --- SISTEM TABS ---
-tab1, tab2 = st.tabs(["🎥 Generate New", "📚 Account Gallery"])
+# --- SISTEM TABS (HORIZONTAL) ---
+# [MODIFIKASI] Menambahkan Tab '⚡ Auto Create Account' di tengah
+tab1, tab2, tab3 = st.tabs(["🎥 Generate New", "⚡ Auto Create Account", "📚 Account Gallery"])
 
 # --- TAB 1: GENERATE NEW ---
 with tab1:
-    # Tampilan Credits
     credits_placeholder = st.empty()
     current_credits = st.session_state.get("user_credits", "---")
     credits_placeholder.info(f"**Sisa Credits Akun:** {current_credits}", icon="💰")
     
     st.write("") 
 
-    # BAGIAN INPUT UTAMA
     c_prompt, c_count, c_delay = st.columns([4, 1, 1]) 
     
     with c_prompt:
@@ -248,12 +225,11 @@ with tab1:
             st.warning("⚠️ Harap upload gambar dulu!")
             return
         
-        # Ambil kredensial dari session state (baik dari manual input atau auto generate)
         target_email = st.session_state.get("u_email", "")
         target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
         
         if not target_email:
-            st.error("Email kosong! Silakan isi manual atau gunakan Auto Create.")
+            st.error("Email kosong! Silakan isi manual di sidebar atau buat akun baru di Tab Auto Create.")
             return
 
         session = requests.Session()
@@ -326,7 +302,6 @@ with tab1:
                     log_status.write(f"➕ Task #{i} dikirim...")
                     tasks_submitted += 1
                     
-                    # Update Credits Real-time
                     try:
                         r_upd = session.get("https://sjinn.ai/api/get_user_account")
                         if r_upd.status_code == 200:
@@ -370,12 +345,34 @@ with tab1:
     if st.button("MULAI BATCH GENERATE", type="primary", use_container_width=True):
         process_batch()
 
-# --- TAB 2: ACCOUNT GALLERY ---
+# --- TAB 2: AUTO CREATE ACCOUNT (FITUR BARU) ---
 with tab2:
+    st.subheader("⚡ Auto Register & Verify Account")
+    st.info("Fitur ini akan membuat akun Sjinn baru menggunakan email sementara, memverifikasinya, dan otomatis mengatur akun tersebut sebagai akun aktif di sidebar.")
+    
+    col_auto1, col_auto2 = st.columns([1, 2])
+    
+    with col_auto1:
+        if st.button("🛠️ Generate Akun Baru", type="primary", use_container_width=True):
+            new_email, new_pass = process_auto_create()
+            if new_email:
+                # Simpan ke session state agar Sidebar terupdate
+                st.session_state["u_email"] = new_email
+                st.session_state["u_pass"] = new_pass
+                st.session_state["use_same_pass"] = True 
+                
+                # Cek saldo akun baru
+                check_credits(manual_email=new_email, manual_pass=new_pass)
+                
+                st.success(f"Akun **{new_email}** siap digunakan! Silakan pindah ke Tab **Generate New**.")
+                time.sleep(2)
+                st.rerun()
+
+# --- TAB 3: ACCOUNT GALLERY ---
+with tab3:
     st.write("Klik tombol di bawah untuk memuat semua video yang pernah Anda buat di akun ini.")
     
     if st.button("🔄 Refresh / Muat Gallery", use_container_width=True):
-        # Ambil kredensial dari session
         target_email = st.session_state.get("u_email", "")
         target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
 
