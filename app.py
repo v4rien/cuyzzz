@@ -204,18 +204,15 @@ with st.sidebar:
     if email_input != st.session_state.get("u_email", ""):
         st.session_state["u_email"] = email_input
 
-    # 2. Password Checkbox Logic (FIX CRASH)
-    # Inisialisasi default value jika belum ada
+    # 2. Password Checkbox Logic
     if "use_same_pass" not in st.session_state:
         st.session_state["use_same_pass"] = True
 
-    # Render widget dengan KEY BERBEDA ("chk_pass_widget") agar tidak bentrok saat update state
     is_checked = st.checkbox(
         "Password same as email", 
         value=st.session_state["use_same_pass"], 
         key="chk_pass_widget"
     )
-    # Sinkronisasi nilai widget ke variable state utama
     st.session_state["use_same_pass"] = is_checked
 
     # 3. Password Input Logic
@@ -259,7 +256,6 @@ with tab1:
             return
         
         target_email = st.session_state.get("u_email", "")
-        # Gunakan logic state, bukan widget key
         target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
         
         if not target_email:
@@ -390,16 +386,20 @@ with tab2:
         if st.button("🛠️ Generate Akun Baru", type="primary", use_container_width=True):
             new_email, new_pass = process_auto_create()
             if new_email:
-                # Update Session State (Variable Penyimpanan)
+                # 1. Update Logical Variables
                 st.session_state["u_email"] = new_email
                 st.session_state["u_pass"] = new_pass
                 st.session_state["use_same_pass"] = True 
+
+                # 2. Update WIDGET KEY STATE (Penting agar tampilan sidebar berubah)
+                st.session_state["u_email_input"] = new_email
+                st.session_state["chk_pass_widget"] = True
                 
-                # Cek saldo otomatis
+                # 3. Cek saldo otomatis
                 check_credits(manual_email=new_email, manual_pass=new_pass)
                 
                 st.success(f"Akun **{new_email}** siap! Cek Telegram Anda.")
-                time.sleep(2)
+                time.sleep(1)
                 st.rerun()
 
 # --- TAB 3: ACCOUNT GALLERY ---
