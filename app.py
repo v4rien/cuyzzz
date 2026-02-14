@@ -195,14 +195,12 @@ with st.sidebar:
     st.header("Account Config")
     st.caption("Akun yang sedang aktif digunakan:")
     
-    # 1. Email Logic
     def_email = st.session_state.get("u_email", "")
     email_input = st.text_input("Email", value=def_email, key="u_email_input")
     
     if email_input != st.session_state.get("u_email", ""):
         st.session_state["u_email"] = email_input
 
-    # 2. Password Checkbox Logic
     if "use_same_pass" not in st.session_state:
         st.session_state["use_same_pass"] = True
 
@@ -213,7 +211,6 @@ with st.sidebar:
     )
     st.session_state["use_same_pass"] = is_checked
 
-    # 3. Password Input Logic
     if not st.session_state["use_same_pass"]:
         pass_input = st.text_input("Password", key="u_pass", type="password")
     else:
@@ -221,7 +218,7 @@ with st.sidebar:
 
     st.write("") 
     
-    if st.button("Login", use_container_width=True):
+    if st.button("🚀 Login / Cek Data", use_container_width=True):
         check_credits()
 
 # --- SISTEM TABS ---
@@ -231,7 +228,7 @@ tab1, tab2, tab3 = st.tabs(["🎥 Generate New", "⚡ Auto Create Account", "�
 with tab1:
     credits_placeholder = st.empty()
     current_credits = st.session_state.get("user_credits", "---")
-    credits_placeholder.info(f"**Credits Akun:** {current_credits}", icon="💰")
+    credits_placeholder.info(f"**Sisa Credits Akun:** {current_credits}", icon="💰")
     
     st.write("") 
 
@@ -268,7 +265,7 @@ with tab1:
 
         log_status = st.status("🚀 Memulai Sistem...", expanded=True)
 
-        # LOGIN
+        # 1. LOGIN
         log_status.write("🔐 Sedang Login...")
         try:
             r_csrf = session.get("https://sjinn.ai/api/auth/csrf")
@@ -296,22 +293,44 @@ with tab1:
                 credits_placeholder.info(f"**Sisa Credits Akun:** {bal}", icon="💰")
         except: pass
 
-        # UPLOAD
+        # 2. UPLOAD (DENGAN RETRY & VALIDASI)
         log_status.write("📤 Mengupload Gambar Master...")
-        try:
-            mime_type = uploaded_file.type
-            r_init = session.post("https://sjinn.ai/api/upload_file", json={"content_type": mime_type})
-            data_up = r_init.json().get("data", {})
-            signed_url = data_up.get("signed_url")
-            file_uuid = data_up.get("file_name")
+        file_uuid = None
+        max_retries_upload = 3
+        
+        for attempt in range(max_retries_upload):
+            try:
+                # Pastikan pointer file ada di awal setiap kali mencoba upload
+                uploaded_file.seek(0)
+                
+                mime_type = uploaded_file.type
+                r_init = session.post("https://sjinn.ai/api/upload_file", json={"content_type": mime_type})
+                
+                if r_init.status_code == 200:
+                    data_up = r_init.json().get("data", {})
+                    signed_url = data_up.get("signed_url")
+                    uuid_temp = data_up.get("file_name")
+                    
+                    if signed_url and uuid_temp:
+                        # Upload binary ke signed URL
+                        r_put = requests.put(signed_url, data=uploaded_file, headers={"Content-Type": mime_type, "Content-Length": str(uploaded_file.size)})
+                        
+                        if r_put.status_code == 200:
+                            file_uuid = uuid_temp
+                            log_status.write(f"✅ Upload Sukses (Percobaan {attempt+1})")
+                            break # Berhenti loop jika sukses
+            except Exception as e:
+                log_status.write(f"⚠️ Gagal Upload (Percobaan {attempt+1}): {e}")
             
-            uploaded_file.seek(0)
-            requests.put(signed_url, data=uploaded_file, headers={"Content-Type": mime_type, "Content-Length": str(uploaded_file.size)})
-        except Exception as e:
-            log_status.update(label="❌ Gagal Upload!", state="error")
-            return
+            time.sleep(2) # Jeda sebelum retry
 
-        # KIRIM TASK
+        # VALIDASI FINAL: JIKA GAGAL UPLOAD, JANGAN LANJUT
+        if not file_uuid:
+            log_status.update(label="❌ Gagal Upload Fatal!", state="error")
+            st.error("Gagal mengupload gambar setelah 3x percobaan. Sistem dihentikan. Silakan cek koneksi atau ganti gambar.")
+            return # <--- STOP DISINI
+
+        # 3. KIRIM TASK (Hanya jika file_uuid ada)
         session.headers.update({"Referer": "https://sjinn.ai/tool-mode/sjinn-image-to-video"})
         tasks_submitted = 0
         progress_bar = st.progress(0)
@@ -345,7 +364,7 @@ with tab1:
 
             except: pass
 
-        # MONITORING
+        # 4. MONITORING
         st.divider()
         result_cols = st.columns(3)
         completed_ids = set()
@@ -378,17 +397,15 @@ with tab2:
     st.subheader("⚡ Auto Register & Verify Account")
     st.info("Akun yang berhasil dibuat akan otomatis dikirim ke Telegram Bot Anda.", icon="✈️")
     
-    # --- MENAMPILKAN LOG HASIL GENERATE DENGAN TOMBOL COPY ---
     if "new_account_log" in st.session_state:
         acc_data = st.session_state["new_account_log"]
         
         st.success(f"✅ **Akun Berhasil Dibuat** ({acc_data['time']})")
         
-        # Layout Kolom untuk Copy
         c_email, c_pass = st.columns(2)
         with c_email:
             st.caption("📧 Email (Hover untuk copy)")
-            st.code(acc_data['email'], language="text") # st.code punya tombol copy built-in
+            st.code(acc_data['email'], language="text") 
         with c_pass:
             st.caption("🔑 Password (Hover untuk copy)")
             st.code(acc_data['pass'], language="text")
@@ -401,25 +418,21 @@ with tab2:
         if st.button("🛠️ Generate Akun Baru", type="primary", use_container_width=True):
             new_email, new_pass = process_auto_create()
             if new_email:
-                # 1. Update Variable Data Utama
                 st.session_state["u_email"] = new_email
                 st.session_state["u_pass"] = new_pass
                 st.session_state["use_same_pass"] = True 
 
-                # 2. SIMPAN LOG SUKSES
                 st.session_state["new_account_log"] = {
                     "email": new_email,
                     "pass": new_pass,
                     "time": datetime.now().strftime("%H:%M:%S")
                 }
 
-                # 3. RESET WIDGET STATE
                 if "u_email_input" in st.session_state:
                     del st.session_state["u_email_input"]
                 if "chk_pass_widget" in st.session_state:
                     del st.session_state["chk_pass_widget"]
                 
-                # 4. Cek saldo otomatis
                 check_credits(manual_email=new_email, manual_pass=new_pass)
                 
                 st.rerun()
