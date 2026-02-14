@@ -300,9 +300,7 @@ with tab1:
         
         for attempt in range(max_retries_upload):
             try:
-                # Pastikan pointer file ada di awal setiap kali mencoba upload
                 uploaded_file.seek(0)
-                
                 mime_type = uploaded_file.type
                 r_init = session.post("https://sjinn.ai/api/upload_file", json={"content_type": mime_type})
                 
@@ -312,25 +310,26 @@ with tab1:
                     uuid_temp = data_up.get("file_name")
                     
                     if signed_url and uuid_temp:
-                        # Upload binary ke signed URL
                         r_put = requests.put(signed_url, data=uploaded_file, headers={"Content-Type": mime_type, "Content-Length": str(uploaded_file.size)})
-                        
                         if r_put.status_code == 200:
                             file_uuid = uuid_temp
                             log_status.write(f"✅ Upload Sukses (Percobaan {attempt+1})")
-                            break # Berhenti loop jika sukses
+                            break
             except Exception as e:
                 log_status.write(f"⚠️ Gagal Upload (Percobaan {attempt+1}): {e}")
             
-            time.sleep(2) # Jeda sebelum retry
+            time.sleep(2)
 
-        # VALIDASI FINAL: JIKA GAGAL UPLOAD, JANGAN LANJUT
         if not file_uuid:
             log_status.update(label="❌ Gagal Upload Fatal!", state="error")
-            st.error("Gagal mengupload gambar setelah 3x percobaan. Sistem dihentikan. Silakan cek koneksi atau ganti gambar.")
-            return # <--- STOP DISINI
+            st.error("Gagal mengupload gambar setelah 3x percobaan. Sistem dihentikan.")
+            return
 
-        # 3. KIRIM TASK (Hanya jika file_uuid ada)
+        # [MODIFIKASI] JEDA SETELAH UPLOAD SUKSES
+        log_status.write("⏳ Menunggu sinkronisasi file (3 detik)...")
+        time.sleep(3) 
+
+        # 3. KIRIM TASK
         session.headers.update({"Referer": "https://sjinn.ai/tool-mode/sjinn-image-to-video"})
         tasks_submitted = 0
         progress_bar = st.progress(0)
