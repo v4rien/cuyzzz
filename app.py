@@ -415,4 +415,42 @@ with tab3:
     if st.button("🔄 Refresh / Muat Gallery", use_container_width=True):
         target_email = st.session_state.get("u_email", "")
         # Gunakan logic state, bukan widget key
-        target_pass = target_email if st.session_state.
+        target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
+
+        if not target_email:
+            st.error("Silakan isi Email & Password di sidebar, lalu klik Login!")
+        else:
+            with st.spinner("Mengambil data dari server..."):
+                session_gal = requests.Session()
+                try:
+                    r_csrf = session_gal.get("https://sjinn.ai/api/auth/csrf")
+                    csrf_token = r_csrf.json().get("csrfToken")
+                    payload = {"redirect": "false", "email": target_email, "password": target_pass, "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"}
+                    session_gal.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
+                    
+                    r_info = session_gal.get("https://sjinn.ai/api/get_user_account")
+                    if r_info.status_code == 200:
+                        st.session_state["user_credits"] = r_info.json().get('data', {}).get('balances', 0)
+
+                    r_list = session_gal.post("https://sjinn.ai/api/query_app_general_list", json={"id": "sjinn-image-to-video"})
+                    
+                    if r_list.json().get("success"):
+                        all_videos = r_list.json()["data"].get("list", [])
+                        if not all_videos:
+                            st.info("Gallery kosong. Belum ada video yang ditemukan.")
+                        else:
+                            st.write(f"Ditemukan **{len(all_videos)}** video.")
+                            gal_cols = st.columns(3)
+                            for idx, vid in enumerate(all_videos):
+                                with gal_cols[idx % 3]:
+                                    with st.container(border=True):
+                                        if vid.get("status") == 1:
+                                            st.video(vid.get("output_url"))
+                                            st.caption(f"Prompt: {vid.get('input', {}).get('prompt', 'N/A')}")
+                                            st.link_button("Download ⬇️", vid.get("output_url"), use_container_width=True)
+                                        else:
+                                            st.info(f"Video Status: {vid.get('status')} (Proses/Gagal)")
+                    else:
+                        st.error("Gagal mengambil data riwayat.")
+                except Exception as e:
+                    st.error(f"Terjadi kesalahan koneksi: {e}")
