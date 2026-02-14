@@ -144,6 +144,10 @@ def process_auto_create():
         else:
             status_container.update(label=f"❌ Verifikasi Gagal: {r_verify.status_code}", state="error")
             return None, None
+            
+    except Exception as e:
+        status_container.update(label=f"❌ Error System: {e}", state="error")
+        return None, None
 
 # --- FUNGSI CEK CREDITS ---
 def check_credits(manual_email=None, manual_pass=None):
