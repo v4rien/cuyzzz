@@ -2,6 +2,8 @@ import streamlit as st
 import requests
 import time
 import socket
+import re
+import cloudscraper # Library baru dari script gas.py
 import requests.packages.urllib3.util.connection as urllib3_cn
 
 # --- FIX IPV4 ---
@@ -14,15 +16,123 @@ st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wi
 
 st.title("🚀 Sjinn AI - Multi Task Generator")
 
-# --- FUNGSI CEK CREDITS (Dipanggil via Tombol Sidebar) ---
-def check_credits():
-    email = st.session_state.get("u_email", "")
-    is_same = st.session_state.get("use_same_pass", True)
+# --- FUNGSI AUTO CREATE ACCOUNT (Dari gas.py) ---
+def process_auto_create():
+    """Melakukan registrasi otomatis menggunakan cloudscraper & mailticking"""
+    status_container = st.status("🛠️ Sedang Membuat Akun Baru...", expanded=True)
     
-    if is_same:
-        password = email
+    try:
+        scraper = cloudscraper.create_scraper(
+            browser={'browser': 'firefox', 'platform': 'windows', 'mobile': False}
+        )
+        
+        base_url_mail = "https://www.mailticking.com"
+        headers_mail = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Referer": base_url_mail + "/",
+            "Origin": base_url_mail
+        }
+
+        # 1. GET EMAIL
+        status_container.write("📧 Requesting Temporary Email...")
+        r_mail = scraper.post(f"{base_url_mail}/get-mailbox", json={"types": ["4"]}, headers=headers_mail)
+        if r_mail.status_code != 200 or not r_mail.json().get("success"):
+            status_container.update(label="❌ Gagal ambil email!", state="error")
+            return None, None
+            
+        email_address = r_mail.json().get("email")
+        status_container.write(f"✅ Email didapat: **{email_address}**")
+
+        # 2. ACTIVATE EMAIL SESSION
+        scraper.post(f"{base_url_mail}/activate-email", json={"email": email_address}, headers=headers_mail)
+        
+        # 3. GET SESSION TOKEN (Mailticking)
+        r_home = scraper.get(base_url_mail + "/", headers=headers_mail)
+        match = re.search(r'data-code="([^"]+)"', r_home.text)
+        if not match:
+            status_container.update(label="❌ Gagal ambil session mail!", state="error")
+            return None, None
+        data_code = match.group(1)
+
+        # 4. REGISTER TO SJINN
+        status_container.write("📝 Mendaftar ke Sjinn.ai...")
+        payload_reg = {"email": email_address, "password": email_address, "name": ""}
+        headers_sjinn = {
+            "Host": "sjinn.ai",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Content-Type": "application/json",
+            "Origin": "https://sjinn.ai",
+            "Referer": "https://sjinn.ai/login"
+        }
+        
+        r_reg = scraper.post("https://sjinn.ai/api/auth/register", json=payload_reg, headers=headers_sjinn)
+        if r_reg.status_code not in [200, 201]:
+            status_container.update(label=f"❌ Register Gagal: {r_reg.status_code}", state="error")
+            st.error(r_reg.text)
+            return None, None
+            
+        status_container.write("📨 Menunggu Email Verifikasi (Maks 60 detik)...")
+        
+        # 5. POLLING EMAIL
+        message_code = None
+        for i in range(20): # Max 20x3 = 60 detik
+            time.sleep(3)
+            try:
+                r_check = scraper.post(f"{base_url_mail}/get-emails?lang=", json={"email": email_address, "code": data_code}, headers=headers_mail)
+                emails = r_check.json().get("emails", [])
+                if emails:
+                    for mail in emails:
+                        if "sjinn.ai" in mail.get("FromEmail", "").lower():
+                            message_code = mail.get("Code")
+                            break
+                if message_code: break
+            except: pass
+            
+        if not message_code:
+            status_container.update(label="❌ Timeout! Email tidak masuk.", state="error")
+            return None, None
+
+        # 6. GET VERIFICATION LINK/TOKEN
+        status_container.write("🔍 Mengekstrak Token Verifikasi...")
+        r_view = scraper.get(f"{base_url_mail}/mail/view/{message_code}/", headers=headers_mail)
+        token_match = re.search(r'token=([a-zA-Z0-9]{64})', r_view.text)
+        
+        if not token_match:
+            status_container.update(label="❌ Token tidak ditemukan di email.", state="error")
+            return None, None
+            
+        final_token = token_match.group(1)
+
+        # 7. VERIFY ACCOUNT
+        status_container.write("🔐 Memverifikasi Akun...")
+        headers_verify = headers_sjinn.copy()
+        if "Content-Type" in headers_verify: del headers_verify["Content-Type"]
+        
+        r_verify = scraper.get("https://sjinn.ai/api/auth/verify-email", params={"token": final_token, "email": email_address}, headers=headers_verify)
+        
+        if r_verify.status_code in [200, 201, 302]:
+            status_container.update(label="🎉 Akun Berhasil Dibuat!", state="complete", expanded=False)
+            return email_address, email_address # Pass sama dengan email
+        else:
+            status_container.update(label=f"❌ Verifikasi Gagal: {r_verify.status_code}", state="error")
+            return None, None
+
+    except Exception as e:
+        status_container.update(label=f"❌ Error System: {e}", state="error")
+        return None, None
+
+# --- FUNGSI CEK CREDITS (Manual) ---
+def check_credits(manual_email=None, manual_pass=None):
+    # Tentukan sumber kredensial
+    if manual_email and manual_pass:
+        email, password = manual_email, manual_pass
     else:
-        password = st.session_state.get("u_pass", "")
+        email = st.session_state.get("u_email", "")
+        # Cek apakah password disamakan
+        if st.session_state.get("use_same_pass", True):
+            password = email
+        else:
+            password = st.session_state.get("u_pass", "")
 
     if not email:
         st.warning("Email belum diisi!")
@@ -48,6 +158,7 @@ def check_credits():
                     data = r_info.json()
                     balance = data.get('data', {}).get('balances', 0)
                     st.session_state["user_credits"] = balance
+                    st.toast("✅ Login Berhasil!", icon="🎉")
             else:
                 st.session_state["user_credits"] = "Login Gagal"
                 st.error("Login Gagal! Cek Email/Password.")
@@ -59,11 +170,40 @@ def check_credits():
 with st.sidebar:
     st.header("Account Config")
     
-    email_input = st.text_input("Email", key="u_email")
+    # [FITUR BARU] Checkbox Auto Create
+    use_auto_create = st.checkbox("⚡ Auto Create New Account", value=False)
     
+    st.divider()
+
+    if use_auto_create:
+        st.info("Fitur ini akan membuat akun Sjinn baru menggunakan Temp Mail, memverifikasinya, lalu otomatis login.")
+        if st.button("🛠️ Generate & Register Account", type="primary", use_container_width=True):
+            new_email, new_pass = process_auto_create()
+            if new_email:
+                # Simpan ke session state agar form terisi otomatis
+                st.session_state["u_email"] = new_email
+                st.session_state["u_pass"] = new_pass
+                st.session_state["use_same_pass"] = True # Password = Email
+                
+                # Auto cek credits setelah berhasil buat akun
+                check_credits(manual_email=new_email, manual_pass=new_pass)
+                st.rerun()
+    
+    # INPUT MANUAL (Tetap dipertahankan)
+    # Jika hasil generate ada, isi value dari session state
+    def_email = st.session_state.get("u_email", "")
+    
+    email_input = st.text_input("Email", value=def_email, key="u_email_input")
+    
+    # Sinkronisasi input manual ke session state utama jika user mengetik manual
+    if email_input != st.session_state.get("u_email", ""):
+        st.session_state["u_email"] = email_input
+
+    # Logika Password
     if "use_same_pass" not in st.session_state:
         st.session_state.use_same_pass = True
 
+    # Jika checkbox TIDAK dicentang, render input password manual
     if not st.session_state.use_same_pass:
         pass_input = st.text_input("Password", key="u_pass", type="password")
     else:
@@ -73,7 +213,8 @@ with st.sidebar:
     
     st.write("") 
     
-    if st.button("Login", type="primary", use_container_width=True):
+    # Tombol Login Manual (berguna jika tidak pakai auto create atau mau refresh)
+    if st.button("🚀 Login / Cek Data", use_container_width=True):
         check_credits()
 
 # --- SISTEM TABS ---
@@ -81,16 +222,14 @@ tab1, tab2 = st.tabs(["🎥 Generate New", "📚 Account Gallery"])
 
 # --- TAB 1: GENERATE NEW ---
 with tab1:
-    # [MODIFIKASI] Tampilan Credits dalam Box (st.info)
+    # Tampilan Credits
     credits_placeholder = st.empty()
     current_credits = st.session_state.get("user_credits", "---")
-    
-    # Menggunakan st.info untuk membuat box berwarna
     credits_placeholder.info(f"**Sisa Credits Akun:** {current_credits}", icon="💰")
     
     st.write("") 
 
-    # B. BAGIAN INPUT UTAMA
+    # BAGIAN INPUT UTAMA
     c_prompt, c_count, c_delay = st.columns([4, 1, 1]) 
     
     with c_prompt:
@@ -108,6 +247,14 @@ with tab1:
         if not uploaded_file:
             st.warning("⚠️ Harap upload gambar dulu!")
             return
+        
+        # Ambil kredensial dari session state (baik dari manual input atau auto generate)
+        target_email = st.session_state.get("u_email", "")
+        target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
+        
+        if not target_email:
+            st.error("Email kosong! Silakan isi manual atau gunakan Auto Create.")
+            return
 
         session = requests.Session()
         session.headers.update({
@@ -118,15 +265,13 @@ with tab1:
         log_status = st.status("🚀 Memulai Sistem...", expanded=True)
 
         # 1. LOGIN
-        final_pass = email_input if st.session_state.use_same_pass else st.session_state.get("u_pass", "")
-        
         log_status.write("🔐 Sedang Login...")
         try:
             r_csrf = session.get("https://sjinn.ai/api/auth/csrf")
             csrf_token = r_csrf.json().get("csrfToken")
             
             payload = {
-                "redirect": "false", "email": email_input, "password": final_pass,
+                "redirect": "false", "email": target_email, "password": target_pass,
                 "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"
             }
             r_login = session.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
@@ -138,13 +283,12 @@ with tab1:
             st.error(f"Error Login: {e}")
             return
         
-        # Update credits awal sebelum loop
+        # Update credits awal
         try:
             r_info = session.get("https://sjinn.ai/api/get_user_account")
             if r_info.status_code == 200:
                 bal = r_info.json().get('data', {}).get('balances', 0)
                 st.session_state["user_credits"] = bal
-                # Update box credits real-time
                 credits_placeholder.info(f"**Sisa Credits Akun:** {bal}", icon="💰")
         except: pass
 
@@ -182,13 +326,12 @@ with tab1:
                     log_status.write(f"➕ Task #{i} dikirim...")
                     tasks_submitted += 1
                     
-                    # Update Credits Real-time Setelah Kirim Task
+                    # Update Credits Real-time
                     try:
                         r_upd = session.get("https://sjinn.ai/api/get_user_account")
                         if r_upd.status_code == 200:
                             new_bal = r_upd.json().get('data', {}).get('balances', 0)
                             st.session_state["user_credits"] = new_bal
-                            # Update box credits real-time
                             credits_placeholder.info(f"**Sisa Credits Akun:** {new_bal}", icon="💰")
                     except: pass
                 
@@ -229,21 +372,23 @@ with tab1:
 
 # --- TAB 2: ACCOUNT GALLERY ---
 with tab2:
-    st.info("Klik tombol di bawah untuk memuat semua video yang pernah dibuat di akun ini.")
+    st.write("Klik tombol di bawah untuk memuat semua video yang pernah Anda buat di akun ini.")
     
-    if st.button("Refresh / Muat Gallery", use_container_width=True):
-        if not email_input:
+    if st.button("🔄 Refresh / Muat Gallery", use_container_width=True):
+        # Ambil kredensial dari session
+        target_email = st.session_state.get("u_email", "")
+        target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
+
+        if not target_email:
             st.error("Silakan isi Email & Password di sidebar, lalu klik Login!")
         else:
-            final_pass = email_input if st.session_state.use_same_pass else st.session_state.get("u_pass", "")
-            
             with st.spinner("Mengambil data dari server..."):
                 session_gal = requests.Session()
                 try:
                     # Login Singkat
                     r_csrf = session_gal.get("https://sjinn.ai/api/auth/csrf")
                     csrf_token = r_csrf.json().get("csrfToken")
-                    payload = {"redirect": "false", "email": email_input, "password": final_pass, "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"}
+                    payload = {"redirect": "false", "email": target_email, "password": target_pass, "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"}
                     session_gal.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
                     
                     # Update credits
@@ -259,7 +404,7 @@ with tab2:
                         if not all_videos:
                             st.info("Gallery kosong. Belum ada video yang ditemukan.")
                         else:
-                            st.success(f"Ditemukan **{len(all_videos)}** video.")
+                            st.write(f"Ditemukan **{len(all_videos)}** video.")
                             gal_cols = st.columns(3)
                             for idx, vid in enumerate(all_videos):
                                 with gal_cols[idx % 3]:
