@@ -26,8 +26,6 @@ def send_telegram_notification(email, password, credits):
     """Mengirim data akun ke Telegram Bot"""
     try:
         waktu = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
-        # Format pesan dengan Markdown agar rapi dan mudah dicopy
         pesan = f"""
 🚀 *NEW ACCOUNT CREATED!*
 ━━━━━━━━━━━━━━━━━━
@@ -38,16 +36,9 @@ def send_telegram_notification(email, password, credits):
 ━━━━━━━━━━━━━━━━━━
 _Sent from Sjinn Multi-Tasker_
         """
-        
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {
-            "chat_id": TELEGRAM_CHAT_ID, 
-            "text": pesan, 
-            "parse_mode": "Markdown" # Agar font monospace aktif
-        }
-        
+        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": pesan, "parse_mode": "Markdown"}
         requests.post(url, data=payload, timeout=10)
-        # Tidak perlu print/return, cukup fire-and-forget
     except Exception as e:
         st.error(f"Gagal kirim Telegram: {e}")
 
@@ -81,7 +72,7 @@ def process_auto_create():
         # 2. ACTIVATE EMAIL SESSION
         scraper.post(f"{base_url_mail}/activate-email", json={"email": email_address}, headers=headers_mail)
         
-        # 3. GET SESSION TOKEN (Mailticking)
+        # 3. GET SESSION TOKEN
         r_home = scraper.get(base_url_mail + "/", headers=headers_mail)
         match = re.search(r'data-code="([^"]+)"', r_home.text)
         if not match:
@@ -110,7 +101,7 @@ def process_auto_create():
         
         # 5. POLLING EMAIL
         message_code = None
-        for i in range(20): # Max 20x3 = 60 detik
+        for i in range(20): 
             time.sleep(3)
             try:
                 r_check = scraper.post(f"{base_url_mail}/get-emails?lang=", json={"email": email_address, "code": data_code}, headers=headers_mail)
@@ -127,7 +118,7 @@ def process_auto_create():
             status_container.update(label="❌ Timeout! Email tidak masuk.", state="error")
             return None, None
 
-        # 6. GET VERIFICATION LINK/TOKEN
+        # 6. GET TOKEN
         status_container.write("🔍 Mengekstrak Token Verifikasi...")
         r_view = scraper.get(f"{base_url_mail}/mail/view/{message_code}/", headers=headers_mail)
         token_match = re.search(r'token=([a-zA-Z0-9]{64})', r_view.text)
@@ -147,26 +138,21 @@ def process_auto_create():
         
         if r_verify.status_code in [200, 201, 302]:
             status_container.update(label="🎉 Akun Berhasil Dibuat!", state="complete", expanded=False)
-            
-            # [MODIFIKASI] Kirim notifikasi ke Telegram
             send_telegram_notification(email_address, email_address, "Check in App")
             st.toast("✅ Notifikasi dikirim ke Telegram!", icon="✈️")
-            
             return email_address, email_address 
         else:
             status_container.update(label=f"❌ Verifikasi Gagal: {r_verify.status_code}", state="error")
             return None, None
 
-    except Exception as e:
-        status_container.update(label=f"❌ Error System: {e}", state="error")
-        return None, None
-
 # --- FUNGSI CEK CREDITS ---
 def check_credits(manual_email=None, manual_pass=None):
+    # Logika penentuan email/pass
     if manual_email and manual_pass:
         email, password = manual_email, manual_pass
     else:
         email = st.session_state.get("u_email", "")
+        # Gunakan variable state, BUKAN key widget
         if st.session_state.get("use_same_pass", True):
             password = email
         else:
@@ -179,7 +165,6 @@ def check_credits(manual_email=None, manual_pass=None):
     with st.spinner("Sedang Login & Cek Saldo..."):
         try:
             session_cred = requests.Session()
-            # Login Flow
             r_csrf = session_cred.get("https://sjinn.ai/api/auth/csrf")
             csrf_token = r_csrf.json().get("csrfToken")
             
@@ -190,7 +175,6 @@ def check_credits(manual_email=None, manual_pass=None):
             r_login = session_cred.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
             
             if r_login.status_code == 200:
-                # Get Account Info
                 r_info = session_cred.get("https://sjinn.ai/api/get_user_account")
                 if r_info.status_code == 200:
                     data = r_info.json()
@@ -204,32 +188,44 @@ def check_credits(manual_email=None, manual_pass=None):
             st.session_state["user_credits"] = "Error"
             st.error(f"Error Koneksi: {e}")
 
-# --- SIDEBAR (INPUT AKUN AKTIF) ---
+# --- SIDEBAR (PERBAIKAN LOGIKA DISINI) ---
 with st.sidebar:
     st.header("Account Config")
     st.caption("Akun yang sedang aktif digunakan:")
     
+    # 1. Email Logic
     def_email = st.session_state.get("u_email", "")
     email_input = st.text_input("Email", value=def_email, key="u_email_input")
     
     if email_input != st.session_state.get("u_email", ""):
         st.session_state["u_email"] = email_input
 
+    # 2. Password Checkbox Logic (FIX CRASH)
+    # Inisialisasi default value jika belum ada
     if "use_same_pass" not in st.session_state:
-        st.session_state.use_same_pass = True
+        st.session_state["use_same_pass"] = True
 
-    if not st.session_state.use_same_pass:
+    # Render widget dengan KEY BERBEDA ("chk_pass_widget") agar tidak bentrok saat update state
+    is_checked = st.checkbox(
+        "Password same as email", 
+        value=st.session_state["use_same_pass"], 
+        key="chk_pass_widget"
+    )
+    # Sinkronisasi nilai widget ke variable state utama
+    st.session_state["use_same_pass"] = is_checked
+
+    # 3. Password Input Logic
+    if not st.session_state["use_same_pass"]:
         pass_input = st.text_input("Password", key="u_pass", type="password")
     else:
         pass_input = email_input
 
-    st.checkbox("Password same as email", key="use_same_pass")
     st.write("") 
     
     if st.button("🚀 Login / Cek Data", use_container_width=True):
         check_credits()
 
-# --- SISTEM TABS (HORIZONTAL) ---
+# --- SISTEM TABS ---
 tab1, tab2, tab3 = st.tabs(["🎥 Generate New", "⚡ Auto Create Account", "📚 Account Gallery"])
 
 # --- TAB 1: GENERATE NEW ---
@@ -259,6 +255,7 @@ with tab1:
             return
         
         target_email = st.session_state.get("u_email", "")
+        # Gunakan logic state, bukan widget key
         target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
         
         if not target_email:
@@ -273,7 +270,7 @@ with tab1:
 
         log_status = st.status("🚀 Memulai Sistem...", expanded=True)
 
-        # 1. LOGIN
+        # LOGIN
         log_status.write("🔐 Sedang Login...")
         try:
             r_csrf = session.get("https://sjinn.ai/api/auth/csrf")
@@ -301,7 +298,7 @@ with tab1:
                 credits_placeholder.info(f"**Sisa Credits Akun:** {bal}", icon="💰")
         except: pass
 
-        # 2. UPLOAD
+        # UPLOAD
         log_status.write("📤 Mengupload Gambar Master...")
         try:
             mime_type = uploaded_file.type
@@ -316,7 +313,7 @@ with tab1:
             log_status.update(label="❌ Gagal Upload!", state="error")
             return
 
-        # 3. KIRIM TASK
+        # KIRIM TASK
         session.headers.update({"Referer": "https://sjinn.ai/tool-mode/sjinn-image-to-video"})
         tasks_submitted = 0
         progress_bar = st.progress(0)
@@ -350,7 +347,7 @@ with tab1:
 
             except: pass
 
-        # 4. MONITORING
+        # MONITORING
         st.divider()
         result_cols = st.columns(3)
         completed_ids = set()
@@ -389,10 +386,12 @@ with tab2:
         if st.button("🛠️ Generate Akun Baru", type="primary", use_container_width=True):
             new_email, new_pass = process_auto_create()
             if new_email:
+                # Update Session State (Variable Penyimpanan)
                 st.session_state["u_email"] = new_email
                 st.session_state["u_pass"] = new_pass
                 st.session_state["use_same_pass"] = True 
                 
+                # Cek saldo otomatis
                 check_credits(manual_email=new_email, manual_pass=new_pass)
                 
                 st.success(f"Akun **{new_email}** siap! Cek Telegram Anda.")
@@ -405,6 +404,7 @@ with tab3:
     
     if st.button("🔄 Refresh / Muat Gallery", use_container_width=True):
         target_email = st.session_state.get("u_email", "")
+        # Gunakan logic state, bukan widget key
         target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
 
         if not target_email:
