@@ -5,16 +5,51 @@ import socket
 import re
 import cloudscraper
 import requests.packages.urllib3.util.connection as urllib3_cn
+from datetime import datetime
 
 # --- FIX IPV4 ---
 def allowed_gai_family():
     return socket.AF_INET
 urllib3_cn.allowed_gai_family = allowed_gai_family
 
+# --- KONFIGURASI TELEGRAM ---
+TELEGRAM_BOT_TOKEN = "8497569370:AAGgtCtPyYPBGBhdqGQQv-DVV7d8JPC69Wo"
+TELEGRAM_CHAT_ID = "7779160370"
+
 # --- SETUP HALAMAN ---
 st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wide") 
 
 st.title("🚀 Sjinn AI - Multi Task Generator")
+
+# --- FUNGSI KIRIM KE TELEGRAM ---
+def send_telegram_notification(email, password, credits):
+    """Mengirim data akun ke Telegram Bot"""
+    try:
+        waktu = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Format pesan dengan Markdown agar rapi dan mudah dicopy
+        pesan = f"""
+🚀 *NEW ACCOUNT CREATED!*
+━━━━━━━━━━━━━━━━━━
+📧 *Email:* `{email}`
+🔑 *Password:* `{password}`
+💰 *Credits:* {credits}
+📅 *Time:* {waktu}
+━━━━━━━━━━━━━━━━━━
+_Sent from Sjinn Multi-Tasker_
+        """
+        
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID, 
+            "text": pesan, 
+            "parse_mode": "Markdown" # Agar font monospace aktif
+        }
+        
+        requests.post(url, data=payload, timeout=10)
+        # Tidak perlu print/return, cukup fire-and-forget
+    except Exception as e:
+        st.error(f"Gagal kirim Telegram: {e}")
 
 # --- FUNGSI AUTO CREATE ACCOUNT ---
 def process_auto_create():
@@ -112,7 +147,12 @@ def process_auto_create():
         
         if r_verify.status_code in [200, 201, 302]:
             status_container.update(label="🎉 Akun Berhasil Dibuat!", state="complete", expanded=False)
-            return email_address, email_address # Pass sama dengan email
+            
+            # [MODIFIKASI] Kirim notifikasi ke Telegram
+            send_telegram_notification(email_address, email_address, "Check in App")
+            st.toast("✅ Notifikasi dikirim ke Telegram!", icon="✈️")
+            
+            return email_address, email_address 
         else:
             status_container.update(label=f"❌ Verifikasi Gagal: {r_verify.status_code}", state="error")
             return None, None
@@ -169,17 +209,12 @@ with st.sidebar:
     st.header("Account Config")
     st.caption("Akun yang sedang aktif digunakan:")
     
-    # Value default dari session state
     def_email = st.session_state.get("u_email", "")
-    
-    # Input Email
     email_input = st.text_input("Email", value=def_email, key="u_email_input")
     
-    # Sinkronisasi jika user mengetik manual
     if email_input != st.session_state.get("u_email", ""):
         st.session_state["u_email"] = email_input
 
-    # Logika Checkbox Password
     if "use_same_pass" not in st.session_state:
         st.session_state.use_same_pass = True
 
@@ -189,14 +224,12 @@ with st.sidebar:
         pass_input = email_input
 
     st.checkbox("Password same as email", key="use_same_pass")
-    
     st.write("") 
     
     if st.button("🚀 Login / Cek Data", use_container_width=True):
         check_credits()
 
 # --- SISTEM TABS (HORIZONTAL) ---
-# [MODIFIKASI] Menambahkan Tab '⚡ Auto Create Account' di tengah
 tab1, tab2, tab3 = st.tabs(["🎥 Generate New", "⚡ Auto Create Account", "📚 Account Gallery"])
 
 # --- TAB 1: GENERATE NEW ---
@@ -345,10 +378,10 @@ with tab1:
     if st.button("MULAI BATCH GENERATE", type="primary", use_container_width=True):
         process_batch()
 
-# --- TAB 2: AUTO CREATE ACCOUNT (FITUR BARU) ---
+# --- TAB 2: AUTO CREATE ACCOUNT ---
 with tab2:
     st.subheader("⚡ Auto Register & Verify Account")
-    st.info("Fitur ini akan membuat akun Sjinn baru menggunakan email sementara, memverifikasinya, dan otomatis mengatur akun tersebut sebagai akun aktif di sidebar.")
+    st.info("Akun yang berhasil dibuat akan otomatis dikirim ke Telegram Bot Anda.", icon="✈️")
     
     col_auto1, col_auto2 = st.columns([1, 2])
     
@@ -356,15 +389,13 @@ with tab2:
         if st.button("🛠️ Generate Akun Baru", type="primary", use_container_width=True):
             new_email, new_pass = process_auto_create()
             if new_email:
-                # Simpan ke session state agar Sidebar terupdate
                 st.session_state["u_email"] = new_email
                 st.session_state["u_pass"] = new_pass
                 st.session_state["use_same_pass"] = True 
                 
-                # Cek saldo akun baru
                 check_credits(manual_email=new_email, manual_pass=new_pass)
                 
-                st.success(f"Akun **{new_email}** siap digunakan! Silakan pindah ke Tab **Generate New**.")
+                st.success(f"Akun **{new_email}** siap! Cek Telegram Anda.")
                 time.sleep(2)
                 st.rerun()
 
@@ -382,18 +413,15 @@ with tab3:
             with st.spinner("Mengambil data dari server..."):
                 session_gal = requests.Session()
                 try:
-                    # Login Singkat
                     r_csrf = session_gal.get("https://sjinn.ai/api/auth/csrf")
                     csrf_token = r_csrf.json().get("csrfToken")
                     payload = {"redirect": "false", "email": target_email, "password": target_pass, "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"}
                     session_gal.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
                     
-                    # Update credits
                     r_info = session_gal.get("https://sjinn.ai/api/get_user_account")
                     if r_info.status_code == 200:
                         st.session_state["user_credits"] = r_info.json().get('data', {}).get('balances', 0)
 
-                    # Request List Video
                     r_list = session_gal.post("https://sjinn.ai/api/query_app_general_list", json={"id": "sjinn-image-to-video"})
                     
                     if r_list.json().get("success"):
