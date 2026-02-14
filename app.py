@@ -221,7 +221,7 @@ with st.sidebar:
 
     st.write("") 
     
-    if st.button("🚀 Login / Cek Data", use_container_width=True):
+    if st.button("Login", use_container_width=True):
         check_credits()
 
 # --- SISTEM TABS ---
@@ -231,7 +231,7 @@ tab1, tab2, tab3 = st.tabs(["🎥 Generate New", "⚡ Auto Create Account", "�
 with tab1:
     credits_placeholder = st.empty()
     current_credits = st.session_state.get("user_credits", "---")
-    credits_placeholder.info(f"**Sisa Credits Akun:** {current_credits}", icon="💰")
+    credits_placeholder.info(f"**Credits Akun:** {current_credits}", icon="💰")
     
     st.write("") 
 
