@@ -14,13 +14,8 @@ def allowed_gai_family():
 urllib3_cn.allowed_gai_family = allowed_gai_family
 
 # --- KONFIGURASI TELEGRAM ---
-# 1. Bot untuk Notifikasi Akun Baru
 TG_TOKEN_ACCOUNT = "8497569370:AAGgtCtPyYPBGBhdqGQQv-DVV7d8JPC69Wo"
-
-# 2. Bot untuk Kirim Video
 TG_TOKEN_VIDEO = "7994485589:AAFRA_wJhn4Q4r8UHp_Egud5oEIw2GXcfPc"
-
-# Chat ID
 TG_CHAT_ID = "7779160370"
 
 # --- SETUP HALAMAN ---
@@ -28,9 +23,8 @@ st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wi
 
 st.title("🚀 Sjinn AI - Multi Task Generator")
 
-# --- FUNGSI KIRIM NOTIFIKASI AKUN (Bot 1) ---
+# --- FUNGSI KIRIM NOTIFIKASI AKUN ---
 def send_telegram_notification(email, password, credits):
-    """Mengirim data akun ke Bot Account"""
     try:
         waktu = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         pesan = f"""
@@ -49,41 +43,21 @@ _Sent from Sjinn Multi-Tasker_
     except Exception as e:
         st.error(f"Gagal kirim Notif Akun: {e}")
 
-# --- FUNGSI KIRIM VIDEO (Bot 2 - FIXED FORMAT) ---
+# --- FUNGSI KIRIM VIDEO ---
 def send_telegram_video(video_url, caption=""):
-    """
-    Mengirim Video sebagai MP4 Streaming yang Valid.
-    """
     try:
-        # 1. Download Video ke Memory
         r_get = requests.get(video_url)
-        
         if r_get.status_code == 200:
-            # Menggunakan BytesIO untuk menyimpan file di RAM
             video_bytes = io.BytesIO(r_get.content)
-            
             url = f"https://api.telegram.org/bot{TG_TOKEN_VIDEO}/sendVideo"
+            files = {'video': ('generated_video.mp4', video_bytes, 'video/mp4')}
+            data = {"chat_id": TG_CHAT_ID, "caption": caption, "supports_streaming": "true"}
             
-            # PENTING: Format Tuple ('filename.mp4', binary_data, 'mime_type')
-            # Ini memaksa Telegram mendeteksi ini sebagai video player, bukan file biasa
-            files = {
-                'video': ('generated_video.mp4', video_bytes, 'video/mp4')
-            }
-            
-            data = {
-                "chat_id": TG_CHAT_ID, 
-                "caption": caption,
-                "supports_streaming": "true" # String 'true' kadang lebih aman di API tertentu
-            }
-            
-            # Upload
             r_post = requests.post(url, data=data, files=files, timeout=120)
-            
             if r_post.status_code == 200:
                 return True, "Berhasil"
             else:
                 return False, f"Telegram Error: {r_post.text}"
-                
         return False, "Gagal download video dari source."
     except Exception as e:
         return False, f"System Error: {e}"
@@ -91,12 +65,8 @@ def send_telegram_video(video_url, caption=""):
 # --- FUNGSI AUTO CREATE ACCOUNT ---
 def process_auto_create():
     status_container = st.status("🛠️ Sedang Membuat Akun Baru...", expanded=True)
-    
     try:
-        scraper = cloudscraper.create_scraper(
-            browser={'browser': 'firefox', 'platform': 'windows', 'mobile': False}
-        )
-        
+        scraper = cloudscraper.create_scraper(browser={'browser': 'firefox', 'platform': 'windows', 'mobile': False})
         base_url_mail = "https://www.mailticking.com"
         headers_mail = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -114,18 +84,16 @@ def process_auto_create():
         email_address = r_mail.json().get("email")
         status_container.write(f"✅ Email didapat: **{email_address}**")
 
-        # 2. ACTIVATE EMAIL SESSION
+        # 2. ACTIVATE
         scraper.post(f"{base_url_mail}/activate-email", json={"email": email_address}, headers=headers_mail)
         
-        # 3. GET SESSION TOKEN
+        # 3. GET SESSION
         r_home = scraper.get(base_url_mail + "/", headers=headers_mail)
         match = re.search(r'data-code="([^"]+)"', r_home.text)
-        if not match:
-            status_container.update(label="❌ Gagal ambil session mail!", state="error")
-            return None, None
+        if not match: return None, None
         data_code = match.group(1)
 
-        # 4. REGISTER TO SJINN
+        # 4. REGISTER
         status_container.write("📝 Mendaftar ke Sjinn.ai...")
         payload_reg = {"email": email_address, "password": email_address, "name": ""}
         headers_sjinn = {
@@ -135,16 +103,12 @@ def process_auto_create():
             "Origin": "https://sjinn.ai",
             "Referer": "https://sjinn.ai/login"
         }
-        
         r_reg = scraper.post("https://sjinn.ai/api/auth/register", json=payload_reg, headers=headers_sjinn)
-        if r_reg.status_code not in [200, 201]:
-            status_container.update(label=f"❌ Register Gagal: {r_reg.status_code}", state="error")
-            st.error(r_reg.text)
-            return None, None
+        if r_reg.status_code not in [200, 201]: return None, None
             
         status_container.write("📨 Menunggu Email Verifikasi (Maks 60 detik)...")
         
-        # 5. POLLING EMAIL
+        # 5. POLLING
         message_code = None
         for i in range(20): 
             time.sleep(3)
@@ -159,26 +123,19 @@ def process_auto_create():
                 if message_code: break
             except: pass
             
-        if not message_code:
-            status_container.update(label="❌ Timeout! Email tidak masuk.", state="error")
-            return None, None
+        if not message_code: return None, None
 
         # 6. GET TOKEN
         status_container.write("🔍 Mengekstrak Token Verifikasi...")
         r_view = scraper.get(f"{base_url_mail}/mail/view/{message_code}/", headers=headers_mail)
         token_match = re.search(r'token=([a-zA-Z0-9]{64})', r_view.text)
-        
-        if not token_match:
-            status_container.update(label="❌ Token tidak ditemukan di email.", state="error")
-            return None, None
-            
+        if not token_match: return None, None
         final_token = token_match.group(1)
 
-        # 7. VERIFY ACCOUNT
+        # 7. VERIFY
         status_container.write("🔐 Memverifikasi Akun...")
         headers_verify = headers_sjinn.copy()
         if "Content-Type" in headers_verify: del headers_verify["Content-Type"]
-        
         r_verify = scraper.get("https://sjinn.ai/api/auth/verify-email", params={"token": final_token, "email": email_address}, headers=headers_verify)
         
         if r_verify.status_code in [200, 201, 302]:
@@ -186,10 +143,7 @@ def process_auto_create():
             send_telegram_notification(email_address, email_address, "Check in App")
             st.toast("✅ Notifikasi dikirim ke Telegram!", icon="✈️")
             return email_address, email_address 
-        else:
-            status_container.update(label=f"❌ Verifikasi Gagal: {r_verify.status_code}", state="error")
-            return None, None
-            
+        return None, None
     except Exception as e:
         status_container.update(label=f"❌ Error System: {e}", state="error")
         return None, None
@@ -215,17 +169,13 @@ def check_credits(manual_email=None, manual_pass=None):
             r_csrf = session_cred.get("https://sjinn.ai/api/auth/csrf")
             csrf_token = r_csrf.json().get("csrfToken")
             
-            payload = {
-                "redirect": "false", "email": email, "password": password,
-                "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"
-            }
+            payload = {"redirect": "false", "email": email, "password": password, "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"}
             r_login = session_cred.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
             
             if r_login.status_code == 200:
                 r_info = session_cred.get("https://sjinn.ai/api/get_user_account")
                 if r_info.status_code == 200:
-                    data = r_info.json()
-                    balance = data.get('data', {}).get('balances', 0)
+                    balance = r_info.json().get('data', {}).get('balances', 0)
                     st.session_state["user_credits"] = balance
                     st.toast("✅ Login Berhasil!", icon="🎉")
             else:
@@ -235,7 +185,7 @@ def check_credits(manual_email=None, manual_pass=None):
             st.session_state["user_credits"] = "Error"
             st.error(f"Error Koneksi: {e}")
 
-# --- SIDEBAR (INPUT AKUN) ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("Account Config")
     st.caption("Akun yang sedang aktif digunakan:")
@@ -249,11 +199,7 @@ with st.sidebar:
     if "use_same_pass" not in st.session_state:
         st.session_state["use_same_pass"] = True
 
-    is_checked = st.checkbox(
-        "Password same as email", 
-        value=st.session_state["use_same_pass"], 
-        key="chk_pass_widget"
-    )
+    is_checked = st.checkbox("Password same as email", value=st.session_state["use_same_pass"], key="chk_pass_widget")
     st.session_state["use_same_pass"] = is_checked
 
     if not st.session_state["use_same_pass"]:
@@ -262,7 +208,6 @@ with st.sidebar:
         pass_input = email_input
 
     st.write("") 
-    
     if st.button("🚀 Login / Cek Data", use_container_width=True):
         check_credits()
 
@@ -274,17 +219,13 @@ with tab1:
     credits_placeholder = st.empty()
     current_credits = st.session_state.get("user_credits", "---")
     credits_placeholder.info(f"**Sisa Credits Akun:** {current_credits}", icon="💰")
-    
     st.write("") 
 
     c_prompt, c_count, c_delay = st.columns([4, 1, 1]) 
-    
     with c_prompt:
         prompt_input = st.text_input("Prompt Video", value="", placeholder="Describe the motion...")
-        
     with c_count:
         loop_count = st.number_input("Jumlah", min_value=1, max_value=50, value=1, step=1)
-        
     with c_delay:
         delay_sec = st.number_input("Jeda (detik)", min_value=1, max_value=60, value=5, step=1)
 
@@ -299,115 +240,71 @@ with tab1:
         target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
         
         if not target_email:
-            st.error("Email kosong! Silakan isi manual di sidebar atau buat akun baru di Tab Auto Create.")
+            st.error("Email kosong!")
             return
 
         session = requests.Session()
-        session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": "https://sjinn.ai/login"
-        })
+        session.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", "Referer": "https://sjinn.ai/login"})
 
         log_status = st.status("🚀 Memulai Sistem...", expanded=True)
-
-        # 1. LOGIN
         log_status.write("🔐 Sedang Login...")
+        
         try:
             r_csrf = session.get("https://sjinn.ai/api/auth/csrf")
             csrf_token = r_csrf.json().get("csrfToken")
-            
-            payload = {
-                "redirect": "false", "email": target_email, "password": target_pass,
-                "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"
-            }
+            payload = {"redirect": "false", "email": target_email, "password": target_pass, "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"}
             r_login = session.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
             if r_login.status_code != 200:
                 log_status.update(label="❌ Gagal Login!", state="error")
-                st.error("Login gagal. Cek email/password.")
                 return
-        except Exception as e:
-            st.error(f"Error Login: {e}")
-            return
+        except: return
         
-        # Update credits awal
-        try:
-            r_info = session.get("https://sjinn.ai/api/get_user_account")
-            if r_info.status_code == 200:
-                bal = r_info.json().get('data', {}).get('balances', 0)
-                st.session_state["user_credits"] = bal
-                credits_placeholder.info(f"**Sisa Credits Akun:** {bal}", icon="💰")
-        except: pass
-
-        # 2. UPLOAD
+        # Upload Logic
         log_status.write("📤 Mengupload Gambar Master...")
         file_uuid = None
-        max_retries_upload = 3
-        
-        for attempt in range(max_retries_upload):
+        for attempt in range(3):
             try:
                 uploaded_file.seek(0)
-                mime_type = uploaded_file.type
-                r_init = session.post("https://sjinn.ai/api/upload_file", json={"content_type": mime_type})
-                
+                r_init = session.post("https://sjinn.ai/api/upload_file", json={"content_type": uploaded_file.type})
                 if r_init.status_code == 200:
                     data_up = r_init.json().get("data", {})
-                    signed_url = data_up.get("signed_url")
-                    uuid_temp = data_up.get("file_name")
-                    
-                    if signed_url and uuid_temp:
-                        r_put = requests.put(signed_url, data=uploaded_file, headers={"Content-Type": mime_type, "Content-Length": str(uploaded_file.size)})
+                    signed_url, uuid_temp = data_up.get("signed_url"), data_up.get("file_name")
+                    if signed_url:
+                        r_put = requests.put(signed_url, data=uploaded_file, headers={"Content-Type": uploaded_file.type, "Content-Length": str(uploaded_file.size)})
                         if r_put.status_code == 200:
                             file_uuid = uuid_temp
-                            log_status.write(f"✅ Upload Sukses (Percobaan {attempt+1})")
                             break
-            except Exception as e:
-                log_status.write(f"⚠️ Gagal Upload (Percobaan {attempt+1}): {e}")
+            except: pass
             time.sleep(2)
 
         if not file_uuid:
-            log_status.update(label="❌ Gagal Upload Fatal!", state="error")
-            st.error("Gagal mengupload gambar setelah 3x percobaan. Sistem dihentikan.")
+            log_status.update(label="❌ Gagal Upload!", state="error")
             return
 
-        log_status.write("⏳ Menunggu sinkronisasi file (3 detik)...")
+        log_status.write("⏳ Menunggu sinkronisasi (3 detik)...")
         time.sleep(3) 
 
-        # 3. KIRIM TASK
+        # Task Loop
         session.headers.update({"Referer": "https://sjinn.ai/tool-mode/sjinn-image-to-video"})
         tasks_submitted = 0
         progress_bar = st.progress(0)
         
-        if "generated_batch" not in st.session_state:
-            st.session_state["generated_batch"] = []
-        else:
-            st.session_state["generated_batch"] = [] 
+        # Clear previous batch result
+        st.session_state["generated_batch"] = []
         
         for i in range(1, loop_count + 1):
             try:
-                payload_task = {
-                    "id": "sjinn-image-to-video",
-                    "input": {"image_url": file_uuid, "prompt": prompt_input},
-                    "mode": "template"
-                }
-                
+                payload_task = {"id": "sjinn-image-to-video", "input": {"image_url": file_uuid, "prompt": prompt_input}, "mode": "template"}
                 r_task = session.post("https://sjinn.ai/api/create_sjinn_image_to_video_task", json=payload_task)
                 
                 if r_task.status_code == 200:
                     log_status.write(f"➕ Task #{i} dikirim...")
                     tasks_submitted += 1
-                    try:
-                        r_upd = session.get("https://sjinn.ai/api/get_user_account")
-                        if r_upd.status_code == 200:
-                            new_bal = r_upd.json().get('data', {}).get('balances', 0)
-                            st.session_state["user_credits"] = new_bal
-                            credits_placeholder.info(f"**Sisa Credits Akun:** {new_bal}", icon="💰")
-                    except: pass
-                
                 progress_bar.progress(int((i / loop_count) * 100))
                 if i < loop_count: time.sleep(delay_sec) 
             except: pass
 
-        # 4. MONITORING
+        # Monitoring
         st.divider()
         completed_ids = set()
         start_wait = time.time()
@@ -423,117 +320,76 @@ with tab1:
                         status, vid_url, tid = task.get("status"), task.get("output_url"), task.get("task_id")
                         if status == 1 and tid not in completed_ids:
                             completed_ids.add(tid)
-                            st.session_state["generated_batch"].append({
-                                "url": vid_url,
-                                "prompt": prompt_input,
-                                "id": tid
-                            })
+                            # SAVE TO SESSION STATE
+                            st.session_state["generated_batch"].append({"url": vid_url, "prompt": prompt_input, "id": tid})
             except: pass
         
         log_status.update(label="✅ Selesai!", state="complete", expanded=False)
         st.balloons()
         st.rerun()
 
-    # --- TOMBOL START ---
     if st.button("MULAI BATCH GENERATE", type="primary", use_container_width=True):
         process_batch()
 
-    # --- HASIL GENERATE & SEND TO TELEGRAM ---
+    # Tampilan Hasil Batch
     if "generated_batch" in st.session_state and st.session_state["generated_batch"]:
         st.divider()
         st.subheader("🎉 Hasil Generate Batch Terakhir")
-        
         results = st.session_state["generated_batch"]
         res_cols = st.columns(3)
-        
         for idx, item in enumerate(results):
             with res_cols[idx % 3]:
                 st.video(item["url"])
-                
-                btn_col1, btn_col2 = st.columns([1,1])
-                with btn_col1:
-                    st.link_button("⬇️ Unduh", item["url"], use_container_width=True)
-                with btn_col2:
-                    if st.button("✈️ Telegram", key=f"gen_tg_{item['id']}"):
-                        with st.spinner("Mengupload ke Telegram..."):
-                            success, msg = send_telegram_video(item["url"], f"Prompt: {item['prompt']}")
-                            if success:
-                                st.toast("✅ Video Terkirim!")
-                            else:
-                                st.error(msg) # Tampilkan error spesifik
-
+                if st.button("✈️ Telegram", key=f"gen_tg_{item['id']}"):
+                    with st.spinner("Mengupload..."):
+                        success, msg = send_telegram_video(item["url"], f"Prompt: {item['prompt']}")
+                        if success: st.toast("✅ Terkirim!"); 
+                        else: st.error(msg)
+        
         st.divider()
-        if st.button("✈️ KIRIM SEMUA VIDEO KE TELEGRAM", type="secondary", use_container_width=True):
-            progress_text = "Sedang mengirim semua video (Upload Ulang)..."
-            my_bar = st.progress(0, text=progress_text)
-            
-            success_count = 0
+        if st.button("✈️ KIRIM SEMUA", type="secondary", use_container_width=True):
+            bar = st.progress(0, "Mengirim...")
             for idx, item in enumerate(results):
-                success, _ = send_telegram_video(item["url"], f"Batch Video #{idx+1}\nPrompt: {item['prompt']}")
-                if success: success_count += 1
-                my_bar.progress((idx + 1) / len(results))
-                time.sleep(1)
-            
-            st.success(f"Selesai! {success_count}/{len(results)} video terkirim.")
+                send_telegram_video(item["url"], f"Batch #{idx+1}\n{item['prompt']}")
+                bar.progress((idx+1)/len(results))
+            st.success("Selesai dikirim.")
 
-
-# --- TAB 2: AUTO CREATE ACCOUNT ---
+# --- TAB 2: AUTO CREATE ---
 with tab2:
-    st.subheader("⚡ Auto Register & Verify Account")
-    st.info("Akun yang berhasil dibuat akan otomatis dikirim ke Telegram Bot Anda.", icon="✈️")
-    
+    st.subheader("⚡ Auto Register")
     if "new_account_log" in st.session_state:
         acc_data = st.session_state["new_account_log"]
-        
-        st.success(f"✅ **Akun Berhasil Dibuat** ({acc_data['time']})")
-        
-        c_email, c_pass = st.columns(2)
-        with c_email:
-            st.caption("📧 Email (Hover untuk copy)")
-            st.code(acc_data['email'], language="text") 
-        with c_pass:
-            st.caption("🔑 Password (Hover untuk copy)")
-            st.code(acc_data['pass'], language="text")
-        
+        st.success(f"✅ Akun Baru: {acc_data['time']}")
+        c1, c2 = st.columns(2)
+        with c1: st.code(acc_data['email'], language="text")
+        with c2: st.code(acc_data['pass'], language="text")
         st.divider()
     
-    col_auto1, col_auto2 = st.columns([1, 2])
-    
-    with col_auto1:
-        if st.button("🛠️ Generate Akun Baru", type="primary", use_container_width=True):
-            new_email, new_pass = process_auto_create()
-            if new_email:
-                st.session_state["u_email"] = new_email
-                st.session_state["u_pass"] = new_pass
-                st.session_state["use_same_pass"] = True 
+    if st.button("🛠️ Generate Akun Baru", type="primary", use_container_width=True):
+        new_email, new_pass = process_auto_create()
+        if new_email:
+            st.session_state["u_email"] = new_email
+            st.session_state["u_pass"] = new_pass
+            st.session_state["use_same_pass"] = True 
+            st.session_state["new_account_log"] = {"email": new_email, "pass": new_pass, "time": datetime.now().strftime("%H:%M:%S")}
+            if "u_email_input" in st.session_state: del st.session_state["u_email_input"]
+            if "chk_pass_widget" in st.session_state: del st.session_state["chk_pass_widget"]
+            check_credits(manual_email=new_email, manual_pass=new_pass)
+            st.rerun()
 
-                st.session_state["new_account_log"] = {
-                    "email": new_email,
-                    "pass": new_pass,
-                    "time": datetime.now().strftime("%H:%M:%S")
-                }
-
-                if "u_email_input" in st.session_state:
-                    del st.session_state["u_email_input"]
-                if "chk_pass_widget" in st.session_state:
-                    del st.session_state["chk_pass_widget"]
-                
-                check_credits(manual_email=new_email, manual_pass=new_pass)
-                
-                st.rerun()
-
-# --- TAB 3: ACCOUNT GALLERY ---
+# --- TAB 3: ACCOUNT GALLERY (FIXED BUTTON) ---
 with tab3:
-    st.write("Klik tombol di bawah untuk memuat semua video yang pernah Anda buat di akun ini.")
+    st.write("Klik Refresh untuk memuat video dari akun ini.")
     
+    # 1. TOMBOL REFRESH -> HANYA UPDATE DATA
     if st.button("🔄 Refresh / Muat Gallery", use_container_width=True):
         target_email = st.session_state.get("u_email", "")
         target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
 
         if not target_email:
-            st.error("Silakan isi Email & Password di sidebar, lalu klik Login!")
+            st.error("Isi Email & Password dulu!")
         else:
-            with st.spinner("Mengambil data dari server..."):
+            with st.spinner("Mengambil data..."):
                 session_gal = requests.Session()
                 try:
                     r_csrf = session_gal.get("https://sjinn.ai/api/auth/csrf")
@@ -541,44 +397,44 @@ with tab3:
                     payload = {"redirect": "false", "email": target_email, "password": target_pass, "csrfToken": csrf_token, "callbackUrl": "https://sjinn.ai/login", "json": "true"}
                     session_gal.post("https://sjinn.ai/api/auth/callback/credentials", data=payload, headers={"Content-Type": "application/x-www-form-urlencoded"})
                     
-                    r_info = session_gal.get("https://sjinn.ai/api/get_user_account")
-                    if r_info.status_code == 200:
-                        st.session_state["user_credits"] = r_info.json().get('data', {}).get('balances', 0)
-
                     r_list = session_gal.post("https://sjinn.ai/api/query_app_general_list", json={"id": "sjinn-image-to-video"})
                     
                     if r_list.json().get("success"):
                         all_videos = r_list.json()["data"].get("list", [])
-                        if not all_videos:
-                            st.info("Gallery kosong. Belum ada video yang ditemukan.")
-                        else:
-                            st.write(f"Ditemukan **{len(all_videos)}** video.")
-                            gal_cols = st.columns(3)
-                            
-                            for idx, vid in enumerate(all_videos):
-                                with gal_cols[idx % 3]:
-                                    with st.container(border=True):
-                                        if vid.get("status") == 1:
-                                            video_url = vid.get("output_url")
-                                            prompt_txt = vid.get('input', {}).get('prompt', 'N/A')
-                                            
-                                            st.video(video_url)
-                                            st.caption(f"Prompt: {prompt_txt}")
-                                            
-                                            gb_col1, gb_col2 = st.columns([1,1])
-                                            with gb_col1:
-                                                st.link_button("⬇️ Unduh", video_url, use_container_width=True)
-                                            with gb_col2:
-                                                if st.button("✈️ Telegram", key=f"gal_tg_{vid.get('task_id')}"):
-                                                    with st.spinner("Mengupload ke Telegram..."):
-                                                        success, msg = send_telegram_video(video_url, f"From Gallery\nPrompt: {prompt_txt}")
-                                                        if success:
-                                                            st.toast("Terkirim ke Telegram!", icon="✅")
-                                                        else:
-                                                            st.error(msg)
-                                        else:
-                                            st.info(f"Video Status: {vid.get('status')} (Proses/Gagal)")
+                        # SIMPAN KE SESSION STATE (PERSISTEN)
+                        st.session_state["gallery_data"] = all_videos
                     else:
-                        st.error("Gagal mengambil data riwayat.")
+                        st.error("Gagal ambil data.")
                 except Exception as e:
-                    st.error(f"Terjadi kesalahan koneksi: {e}")
+                    st.error(f"Error: {e}")
+
+    # 2. RENDER GALLERY DI LUAR BLOK TOMBOL REFRESH
+    if "gallery_data" in st.session_state and st.session_state["gallery_data"]:
+        videos = st.session_state["gallery_data"]
+        st.write(f"Ditemukan **{len(videos)}** video.")
+        gal_cols = st.columns(3)
+        
+        for idx, vid in enumerate(videos):
+            with gal_cols[idx % 3]:
+                with st.container(border=True):
+                    if vid.get("status") == 1:
+                        video_url = vid.get("output_url")
+                        prompt_txt = vid.get('input', {}).get('prompt', 'N/A')
+                        
+                        st.video(video_url)
+                        st.caption(f"Prompt: {prompt_txt}")
+                        
+                        gb_col1, gb_col2 = st.columns([1,1])
+                        with gb_col1:
+                            st.link_button("⬇️ Unduh", video_url, use_container_width=True)
+                        with gb_col2:
+                            # TOMBOL KIRIM TELEGRAM (Sekarang bekerja karena data persisten)
+                            if st.button("✈️ Telegram", key=f"gal_tg_{vid.get('task_id')}"):
+                                with st.spinner("Mengupload ke Telegram..."):
+                                    success, msg = send_telegram_video(video_url, f"From Gallery\nPrompt: {prompt_txt}")
+                                    if success:
+                                        st.toast("✅ Video Terkirim!", icon="✈️")
+                                    else:
+                                        st.error(msg)
+                    else:
+                        st.info(f"Status: {vid.get('status')} (Proses/Gagal)")
