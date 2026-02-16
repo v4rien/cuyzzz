@@ -4,7 +4,7 @@ import time
 import socket
 import re
 import cloudscraper
-import io # Library tambahan untuk handle file di memory
+import io 
 import requests.packages.urllib3.util.connection as urllib3_cn
 from datetime import datetime
 
@@ -49,41 +49,44 @@ _Sent from Sjinn Multi-Tasker_
     except Exception as e:
         st.error(f"Gagal kirim Notif Akun: {e}")
 
-# --- FUNGSI KIRIM VIDEO (Bot 2 - REVISI STABIL) ---
+# --- FUNGSI KIRIM VIDEO (Bot 2 - FIXED FORMAT) ---
 def send_telegram_video(video_url, caption=""):
     """
-    Mengirim Video dengan cara:
-    1. Download Full ke RAM (BytesIO)
-    2. Upload sebagai file .mp4 ke Telegram
+    Mengirim Video sebagai MP4 Streaming yang Valid.
     """
     try:
         # 1. Download Video ke Memory
         r_get = requests.get(video_url)
         
         if r_get.status_code == 200:
-            # Simpan ke buffer memory (seperti file virtual)
-            video_buffer = io.BytesIO(r_get.content)
-            video_buffer.name = "video.mp4" # Nama file wajib .mp4 agar dideteksi video player
+            # Menggunakan BytesIO untuk menyimpan file di RAM
+            video_bytes = io.BytesIO(r_get.content)
             
             url = f"https://api.telegram.org/bot{TG_TOKEN_VIDEO}/sendVideo"
             
+            # PENTING: Format Tuple ('filename.mp4', binary_data, 'mime_type')
+            # Ini memaksa Telegram mendeteksi ini sebagai video player, bukan file biasa
             files = {
-                'video': video_buffer
+                'video': ('generated_video.mp4', video_bytes, 'video/mp4')
             }
             
             data = {
                 "chat_id": TG_CHAT_ID, 
                 "caption": caption,
-                "supports_streaming": True # Agar bisa di-play tanpa download full di HP
+                "supports_streaming": "true" # String 'true' kadang lebih aman di API tertentu
             }
             
-            # Upload (Timeout 60 detik)
-            r_post = requests.post(url, data=data, files=files, timeout=60)
-            return r_post.status_code == 200
-        return False
+            # Upload
+            r_post = requests.post(url, data=data, files=files, timeout=120)
+            
+            if r_post.status_code == 200:
+                return True, "Berhasil"
+            else:
+                return False, f"Telegram Error: {r_post.text}"
+                
+        return False, "Gagal download video dari source."
     except Exception as e:
-        print(f"Error Upload Video: {e}")
-        return False
+        return False, f"System Error: {e}"
 
 # --- FUNGSI AUTO CREATE ACCOUNT ---
 def process_auto_create():
@@ -287,7 +290,6 @@ with tab1:
 
     uploaded_file = st.file_uploader("Pilih Gambar (.png/.jpg)", type=['png', 'jpg', 'jpeg'])
 
-    # --- FUNGSI PROSES BATCH ---
     def process_batch():
         if not uploaded_file:
             st.warning("⚠️ Harap upload gambar dulu!")
@@ -453,11 +455,12 @@ with tab1:
                     st.link_button("⬇️ Unduh", item["url"], use_container_width=True)
                 with btn_col2:
                     if st.button("✈️ Telegram", key=f"gen_tg_{item['id']}"):
-                        with st.spinner("Mengupload..."):
-                            if send_telegram_video(item["url"], f"Prompt: {item['prompt']}"):
+                        with st.spinner("Mengupload ke Telegram..."):
+                            success, msg = send_telegram_video(item["url"], f"Prompt: {item['prompt']}")
+                            if success:
                                 st.toast("✅ Video Terkirim!")
                             else:
-                                st.error("Gagal kirim.")
+                                st.error(msg) # Tampilkan error spesifik
 
         st.divider()
         if st.button("✈️ KIRIM SEMUA VIDEO KE TELEGRAM", type="secondary", use_container_width=True):
@@ -466,8 +469,8 @@ with tab1:
             
             success_count = 0
             for idx, item in enumerate(results):
-                if send_telegram_video(item["url"], f"Batch Video #{idx+1}\nPrompt: {item['prompt']}"):
-                    success_count += 1
+                success, _ = send_telegram_video(item["url"], f"Batch Video #{idx+1}\nPrompt: {item['prompt']}")
+                if success: success_count += 1
                 my_bar.progress((idx + 1) / len(results))
                 time.sleep(1)
             
@@ -552,7 +555,6 @@ with tab3:
                             st.write(f"Ditemukan **{len(all_videos)}** video.")
                             gal_cols = st.columns(3)
                             
-                            # MENAMPILKAN GALLERY DENGAN TOMBOL TELEGRAM
                             for idx, vid in enumerate(all_videos):
                                 with gal_cols[idx % 3]:
                                     with st.container(border=True):
@@ -563,18 +565,17 @@ with tab3:
                                             st.video(video_url)
                                             st.caption(f"Prompt: {prompt_txt}")
                                             
-                                            # Layout Tombol Download & Telegram
                                             gb_col1, gb_col2 = st.columns([1,1])
                                             with gb_col1:
                                                 st.link_button("⬇️ Unduh", video_url, use_container_width=True)
                                             with gb_col2:
-                                                # Gunakan ID Video untuk key unik tombol
                                                 if st.button("✈️ Telegram", key=f"gal_tg_{vid.get('task_id')}"):
-                                                    with st.spinner("Mengupload..."):
-                                                        if send_telegram_video(video_url, f"From Gallery\nPrompt: {prompt_txt}"):
-                                                            st.toast("✅ Video Terkirim!")
+                                                    with st.spinner("Mengupload ke Telegram..."):
+                                                        success, msg = send_telegram_video(video_url, f"From Gallery\nPrompt: {prompt_txt}")
+                                                        if success:
+                                                            st.toast("Terkirim ke Telegram!", icon="✅")
                                                         else:
-                                                            st.error("Gagal kirim.")
+                                                            st.error(msg)
                                         else:
                                             st.info(f"Video Status: {vid.get('status')} (Proses/Gagal)")
                     else:
