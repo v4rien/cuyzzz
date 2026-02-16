@@ -12,14 +12,14 @@ def allowed_gai_family():
     return socket.AF_INET
 urllib3_cn.allowed_gai_family = allowed_gai_family
 
-# --- KONFIGURASI TELEGRAM (SPLIT) ---
+# --- KONFIGURASI TELEGRAM ---
 # 1. Bot untuk Notifikasi Akun Baru
 TG_TOKEN_ACCOUNT = "8497569370:AAGgtCtPyYPBGBhdqGQQv-DVV7d8JPC69Wo"
 
 # 2. Bot untuk Kirim Video
 TG_TOKEN_VIDEO = "7994485589:AAFRA_wJhn4Q4r8UHp_Egud5oEIw2GXcfPc"
 
-# Chat ID (Sama untuk keduanya)
+# Chat ID
 TG_CHAT_ID = "7779160370"
 
 # --- SETUP HALAMAN ---
@@ -48,27 +48,39 @@ _Sent from Sjinn Multi-Tasker_
     except Exception as e:
         st.error(f"Gagal kirim Notif Akun: {e}")
 
-# --- FUNGSI KIRIM VIDEO (Bot 2) ---
+# --- FUNGSI KIRIM VIDEO (Bot 2 - REVISI UPLOAD) ---
 def send_telegram_video(video_url, caption=""):
-    """Mengirim Video MP4 ke Bot Video"""
+    """Mengirim Video dengan cara Download -> Upload Ulang sebagai MP4"""
     try:
-        url = f"https://api.telegram.org/bot{TG_TOKEN_VIDEO}/sendVideo"
-        # Endpoint sendVideo memastikan file dikirim sebagai video player, bukan GIF/Dokumen
-        payload = {
-            "chat_id": TG_CHAT_ID, 
-            "video": video_url,
-            "caption": caption,
-            "supports_streaming": True # Agar bisa langsung diputar tanpa download full
-        }
-        r = requests.post(url, data=payload, timeout=60) # Timeout lebih lama untuk video
-        return r.status_code == 200
+        # 1. Download konten video ke memori
+        # Gunakan stream=True agar tidak membebani memori jika file besar
+        r_vid = requests.get(video_url, stream=True)
+        
+        if r_vid.status_code == 200:
+            url = f"https://api.telegram.org/bot{TG_TOKEN_VIDEO}/sendVideo"
+            
+            # 2. Upload sebagai Multipart File dengan nama .mp4
+            # Ini kuncinya: nama file 'video.mp4' memaksa Telegram merender sebagai Video Player
+            files = {
+                'video': ('generated_video.mp4', r_vid.raw, 'video/mp4')
+            }
+            
+            data = {
+                "chat_id": TG_CHAT_ID, 
+                "caption": caption,
+                "supports_streaming": True # Mengaktifkan fitur streaming
+            }
+            
+            # Timeout diperpanjang karena proses upload butuh waktu
+            r = requests.post(url, data=data, files=files, timeout=120)
+            return r.status_code == 200
+        return False
     except Exception as e:
-        print(f"Error Kirim Video: {e}")
+        print(f"Error Upload Video: {e}")
         return False
 
 # --- FUNGSI AUTO CREATE ACCOUNT ---
 def process_auto_create():
-    """Melakukan registrasi otomatis menggunakan cloudscraper & mailticking"""
     status_container = st.status("🛠️ Sedang Membuat Akun Baru...", expanded=True)
     
     try:
@@ -162,7 +174,6 @@ def process_auto_create():
         
         if r_verify.status_code in [200, 201, 302]:
             status_container.update(label="🎉 Akun Berhasil Dibuat!", state="complete", expanded=False)
-            # Kirim Notif ke Bot Akun
             send_telegram_notification(email_address, email_address, "Check in App")
             st.toast("✅ Notifikasi dikirim ke Telegram!", icon="✈️")
             return email_address, email_address 
@@ -310,6 +321,7 @@ with tab1:
             st.error(f"Error Login: {e}")
             return
         
+        # Update credits awal
         try:
             r_info = session.get("https://sjinn.ai/api/get_user_account")
             if r_info.status_code == 200:
@@ -443,7 +455,7 @@ with tab1:
 
         st.divider()
         if st.button("✈️ KIRIM SEMUA VIDEO KE TELEGRAM", type="secondary", use_container_width=True):
-            progress_text = "Sedang mengirim semua video..."
+            progress_text = "Sedang mengirim semua video (Upload Ulang)..."
             my_bar = st.progress(0, text=progress_text)
             
             success_count = 0
@@ -552,7 +564,7 @@ with tab3:
                                             with gb_col2:
                                                 # Gunakan ID Video untuk key unik tombol
                                                 if st.button("✈️ Telegram", key=f"gal_tg_{vid.get('task_id')}"):
-                                                    with st.spinner("Mengirim..."):
+                                                    with st.spinner("Mengupload ke Telegram..."):
                                                         if send_telegram_video(video_url, f"From Gallery\nPrompt: {prompt_txt}"):
                                                             st.toast("Terkirim ke Telegram!", icon="✅")
                                                         else:
