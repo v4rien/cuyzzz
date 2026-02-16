@@ -12,18 +12,24 @@ def allowed_gai_family():
     return socket.AF_INET
 urllib3_cn.allowed_gai_family = allowed_gai_family
 
-# --- KONFIGURASI TELEGRAM (BARU) ---
-TELEGRAM_BOT_TOKEN = "7994485589:AAFRA_wJhn4Q4r8UHp_Egud5oEIw2GXcfPc"
-TELEGRAM_CHAT_ID = "7779160370"
+# --- KONFIGURASI TELEGRAM (SPLIT) ---
+# 1. Bot untuk Notifikasi Akun Baru
+TG_TOKEN_ACCOUNT = "8497569370:AAGgtCtPyYPBGBhdqGQQv-DVV7d8JPC69Wo"
+
+# 2. Bot untuk Kirim Video
+TG_TOKEN_VIDEO = "7994485589:AAFRA_wJhn4Q4r8UHp_Egud5oEIw2GXcfPc"
+
+# Chat ID (Sama untuk keduanya)
+TG_CHAT_ID = "7779160370"
 
 # --- SETUP HALAMAN ---
 st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wide") 
 
 st.title("🚀 Sjinn AI - Multi Task Generator")
 
-# --- FUNGSI TELEGRAM (TEXT) ---
+# --- FUNGSI KIRIM NOTIFIKASI AKUN (Bot 1) ---
 def send_telegram_notification(email, password, credits):
-    """Mengirim notifikasi akun baru ke Telegram"""
+    """Mengirim data akun ke Bot Account"""
     try:
         waktu = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         pesan = f"""
@@ -36,28 +42,28 @@ def send_telegram_notification(email, password, credits):
 ━━━━━━━━━━━━━━━━━━
 _Sent from Sjinn Multi-Tasker_
         """
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-        payload = {"chat_id": TELEGRAM_CHAT_ID, "text": pesan, "parse_mode": "Markdown"}
+        url = f"https://api.telegram.org/bot{TG_TOKEN_ACCOUNT}/sendMessage"
+        payload = {"chat_id": TG_CHAT_ID, "text": pesan, "parse_mode": "Markdown"}
         requests.post(url, data=payload, timeout=10)
     except Exception as e:
-        st.error(f"Gagal kirim Telegram: {e}")
+        st.error(f"Gagal kirim Notif Akun: {e}")
 
-# --- FUNGSI TELEGRAM (VIDEO) ---
+# --- FUNGSI KIRIM VIDEO (Bot 2) ---
 def send_telegram_video(video_url, caption=""):
-    """Mengirim Video ke Telegram"""
+    """Mengirim Video MP4 ke Bot Video"""
     try:
-        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
-        # Telegram bisa menerima URL video langsung parameter 'video'
+        url = f"https://api.telegram.org/bot{TG_TOKEN_VIDEO}/sendVideo"
+        # Endpoint sendVideo memastikan file dikirim sebagai video player, bukan GIF/Dokumen
         payload = {
-            "chat_id": TELEGRAM_CHAT_ID, 
+            "chat_id": TG_CHAT_ID, 
             "video": video_url,
             "caption": caption,
-            "parse_mode": "Markdown"
+            "supports_streaming": True # Agar bisa langsung diputar tanpa download full
         }
-        r = requests.post(url, data=payload, timeout=30)
+        r = requests.post(url, data=payload, timeout=60) # Timeout lebih lama untuk video
         return r.status_code == 200
     except Exception as e:
-        print(f"Error TG Video: {e}")
+        print(f"Error Kirim Video: {e}")
         return False
 
 # --- FUNGSI AUTO CREATE ACCOUNT ---
@@ -156,6 +162,7 @@ def process_auto_create():
         
         if r_verify.status_code in [200, 201, 302]:
             status_container.update(label="🎉 Akun Berhasil Dibuat!", state="complete", expanded=False)
+            # Kirim Notif ke Bot Akun
             send_telegram_notification(email_address, email_address, "Check in App")
             st.toast("✅ Notifikasi dikirim ke Telegram!", icon="✈️")
             return email_address, email_address 
@@ -303,7 +310,6 @@ with tab1:
             st.error(f"Error Login: {e}")
             return
         
-        # Update credits awal
         try:
             r_info = session.get("https://sjinn.ai/api/get_user_account")
             if r_info.status_code == 200:
@@ -351,11 +357,10 @@ with tab1:
         tasks_submitted = 0
         progress_bar = st.progress(0)
         
-        # Reset Session State Hasil
         if "generated_batch" not in st.session_state:
             st.session_state["generated_batch"] = []
         else:
-            st.session_state["generated_batch"] = [] # Clear previous batch
+            st.session_state["generated_batch"] = [] 
         
         for i in range(1, loop_count + 1):
             try:
@@ -398,7 +403,6 @@ with tab1:
                         status, vid_url, tid = task.get("status"), task.get("output_url"), task.get("task_id")
                         if status == 1 and tid not in completed_ids:
                             completed_ids.add(tid)
-                            # Simpan ke Session State untuk ditampilkan permanen
                             st.session_state["generated_batch"].append({
                                 "url": vid_url,
                                 "prompt": prompt_input,
@@ -408,13 +412,13 @@ with tab1:
         
         log_status.update(label="✅ Selesai!", state="complete", expanded=False)
         st.balloons()
-        st.rerun() # Refresh agar hasil muncul di bawah
+        st.rerun()
 
     # --- TOMBOL START ---
     if st.button("MULAI BATCH GENERATE", type="primary", use_container_width=True):
         process_batch()
 
-    # --- TAMPILAN HASIL GENERATE (PERSISTEN DENGAN BUTTON TG) ---
+    # --- HASIL GENERATE & SEND TO TELEGRAM ---
     if "generated_batch" in st.session_state and st.session_state["generated_batch"]:
         st.divider()
         st.subheader("🎉 Hasil Generate Batch Terakhir")
@@ -426,20 +430,18 @@ with tab1:
             with res_cols[idx % 3]:
                 st.video(item["url"])
                 
-                # TOMBOL KIRIM SATUAN
                 btn_col1, btn_col2 = st.columns([1,1])
                 with btn_col1:
                     st.link_button("⬇️ Unduh", item["url"], use_container_width=True)
                 with btn_col2:
-                    if st.button("✈️ Telegram", key=f"tg_{item['id']}"):
-                        with st.spinner("Mengirim..."):
+                    if st.button("✈️ Telegram", key=f"gen_tg_{item['id']}"):
+                        with st.spinner("Mengirim Video..."):
                             if send_telegram_video(item["url"], f"Prompt: {item['prompt']}"):
                                 st.toast("Terkirim ke Telegram!", icon="✅")
                             else:
                                 st.error("Gagal kirim.")
 
         st.divider()
-        # TOMBOL KIRIM SEMUA
         if st.button("✈️ KIRIM SEMUA VIDEO KE TELEGRAM", type="secondary", use_container_width=True):
             progress_text = "Sedang mengirim semua video..."
             my_bar = st.progress(0, text=progress_text)
@@ -449,7 +451,7 @@ with tab1:
                 if send_telegram_video(item["url"], f"Batch Video #{idx+1}\nPrompt: {item['prompt']}"):
                     success_count += 1
                 my_bar.progress((idx + 1) / len(results))
-                time.sleep(1) # Jeda agar tidak spamming
+                time.sleep(1)
             
             st.success(f"Selesai! {success_count}/{len(results)} video terkirim.")
 
@@ -531,13 +533,30 @@ with tab3:
                         else:
                             st.write(f"Ditemukan **{len(all_videos)}** video.")
                             gal_cols = st.columns(3)
+                            
+                            # MENAMPILKAN GALLERY DENGAN TOMBOL TELEGRAM
                             for idx, vid in enumerate(all_videos):
                                 with gal_cols[idx % 3]:
                                     with st.container(border=True):
                                         if vid.get("status") == 1:
-                                            st.video(vid.get("output_url"))
-                                            st.caption(f"Prompt: {vid.get('input', {}).get('prompt', 'N/A')}")
-                                            st.link_button("Download ⬇️", vid.get("output_url"), use_container_width=True)
+                                            video_url = vid.get("output_url")
+                                            prompt_txt = vid.get('input', {}).get('prompt', 'N/A')
+                                            
+                                            st.video(video_url)
+                                            st.caption(f"Prompt: {prompt_txt}")
+                                            
+                                            # Layout Tombol Download & Telegram
+                                            gb_col1, gb_col2 = st.columns([1,1])
+                                            with gb_col1:
+                                                st.link_button("⬇️ Unduh", video_url, use_container_width=True)
+                                            with gb_col2:
+                                                # Gunakan ID Video untuk key unik tombol
+                                                if st.button("✈️ Telegram", key=f"gal_tg_{vid.get('task_id')}"):
+                                                    with st.spinner("Mengirim..."):
+                                                        if send_telegram_video(video_url, f"From Gallery\nPrompt: {prompt_txt}"):
+                                                            st.toast("Terkirim ke Telegram!", icon="✅")
+                                                        else:
+                                                            st.error("Gagal kirim.")
                                         else:
                                             st.info(f"Video Status: {vid.get('status')} (Proses/Gagal)")
                     else:
