@@ -12,8 +12,8 @@ def allowed_gai_family():
     return socket.AF_INET
 urllib3_cn.allowed_gai_family = allowed_gai_family
 
-# --- KONFIGURASI TELEGRAM ---
-TELEGRAM_BOT_TOKEN = "8497569370:AAGgtCtPyYPBGBhdqGQQv-DVV7d8JPC69Wo"
+# --- KONFIGURASI TELEGRAM (BARU) ---
+TELEGRAM_BOT_TOKEN = "7994485589:AAFRA_wJhn4Q4r8UHp_Egud5oEIw2GXcfPc"
 TELEGRAM_CHAT_ID = "7779160370"
 
 # --- SETUP HALAMAN ---
@@ -21,9 +21,9 @@ st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wi
 
 st.title("🚀 Sjinn AI - Multi Task Generator")
 
-# --- FUNGSI KIRIM KE TELEGRAM ---
+# --- FUNGSI TELEGRAM (TEXT) ---
 def send_telegram_notification(email, password, credits):
-    """Mengirim data akun ke Telegram Bot"""
+    """Mengirim notifikasi akun baru ke Telegram"""
     try:
         waktu = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         pesan = f"""
@@ -41,6 +41,24 @@ _Sent from Sjinn Multi-Tasker_
         requests.post(url, data=payload, timeout=10)
     except Exception as e:
         st.error(f"Gagal kirim Telegram: {e}")
+
+# --- FUNGSI TELEGRAM (VIDEO) ---
+def send_telegram_video(video_url, caption=""):
+    """Mengirim Video ke Telegram"""
+    try:
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendVideo"
+        # Telegram bisa menerima URL video langsung parameter 'video'
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID, 
+            "video": video_url,
+            "caption": caption,
+            "parse_mode": "Markdown"
+        }
+        r = requests.post(url, data=payload, timeout=30)
+        return r.status_code == 200
+    except Exception as e:
+        print(f"Error TG Video: {e}")
+        return False
 
 # --- FUNGSI AUTO CREATE ACCOUNT ---
 def process_auto_create():
@@ -245,6 +263,7 @@ with tab1:
 
     uploaded_file = st.file_uploader("Pilih Gambar (.png/.jpg)", type=['png', 'jpg', 'jpeg'])
 
+    # --- FUNGSI PROSES BATCH ---
     def process_batch():
         if not uploaded_file:
             st.warning("⚠️ Harap upload gambar dulu!")
@@ -293,7 +312,7 @@ with tab1:
                 credits_placeholder.info(f"**Sisa Credits Akun:** {bal}", icon="💰")
         except: pass
 
-        # 2. UPLOAD (DENGAN RETRY & VALIDASI)
+        # 2. UPLOAD
         log_status.write("📤 Mengupload Gambar Master...")
         file_uuid = None
         max_retries_upload = 3
@@ -317,7 +336,6 @@ with tab1:
                             break
             except Exception as e:
                 log_status.write(f"⚠️ Gagal Upload (Percobaan {attempt+1}): {e}")
-            
             time.sleep(2)
 
         if not file_uuid:
@@ -325,7 +343,6 @@ with tab1:
             st.error("Gagal mengupload gambar setelah 3x percobaan. Sistem dihentikan.")
             return
 
-        # [MODIFIKASI] JEDA SETELAH UPLOAD SUKSES
         log_status.write("⏳ Menunggu sinkronisasi file (3 detik)...")
         time.sleep(3) 
 
@@ -333,6 +350,12 @@ with tab1:
         session.headers.update({"Referer": "https://sjinn.ai/tool-mode/sjinn-image-to-video"})
         tasks_submitted = 0
         progress_bar = st.progress(0)
+        
+        # Reset Session State Hasil
+        if "generated_batch" not in st.session_state:
+            st.session_state["generated_batch"] = []
+        else:
+            st.session_state["generated_batch"] = [] # Clear previous batch
         
         for i in range(1, loop_count + 1):
             try:
@@ -347,7 +370,6 @@ with tab1:
                 if r_task.status_code == 200:
                     log_status.write(f"➕ Task #{i} dikirim...")
                     tasks_submitted += 1
-                    
                     try:
                         r_upd = session.get("https://sjinn.ai/api/get_user_account")
                         if r_upd.status_code == 200:
@@ -357,15 +379,11 @@ with tab1:
                     except: pass
                 
                 progress_bar.progress(int((i / loop_count) * 100))
-                
-                if i < loop_count: 
-                    time.sleep(delay_sec) 
-
+                if i < loop_count: time.sleep(delay_sec) 
             except: pass
 
         # 4. MONITORING
         st.divider()
-        result_cols = st.columns(3)
         completed_ids = set()
         start_wait = time.time()
         
@@ -380,16 +398,61 @@ with tab1:
                         status, vid_url, tid = task.get("status"), task.get("output_url"), task.get("task_id")
                         if status == 1 and tid not in completed_ids:
                             completed_ids.add(tid)
-                            with result_cols[(len(completed_ids)-1)%3]:
-                                st.video(vid_url)
-                                st.link_button(f"Download #{len(completed_ids)}", vid_url, use_container_width=True)
+                            # Simpan ke Session State untuk ditampilkan permanen
+                            st.session_state["generated_batch"].append({
+                                "url": vid_url,
+                                "prompt": prompt_input,
+                                "id": tid
+                            })
             except: pass
         
         log_status.update(label="✅ Selesai!", state="complete", expanded=False)
         st.balloons()
+        st.rerun() # Refresh agar hasil muncul di bawah
 
+    # --- TOMBOL START ---
     if st.button("MULAI BATCH GENERATE", type="primary", use_container_width=True):
         process_batch()
+
+    # --- TAMPILAN HASIL GENERATE (PERSISTEN DENGAN BUTTON TG) ---
+    if "generated_batch" in st.session_state and st.session_state["generated_batch"]:
+        st.divider()
+        st.subheader("🎉 Hasil Generate Batch Terakhir")
+        
+        results = st.session_state["generated_batch"]
+        res_cols = st.columns(3)
+        
+        for idx, item in enumerate(results):
+            with res_cols[idx % 3]:
+                st.video(item["url"])
+                
+                # TOMBOL KIRIM SATUAN
+                btn_col1, btn_col2 = st.columns([1,1])
+                with btn_col1:
+                    st.link_button("⬇️ Unduh", item["url"], use_container_width=True)
+                with btn_col2:
+                    if st.button("✈️ Telegram", key=f"tg_{item['id']}"):
+                        with st.spinner("Mengirim..."):
+                            if send_telegram_video(item["url"], f"Prompt: {item['prompt']}"):
+                                st.toast("Terkirim ke Telegram!", icon="✅")
+                            else:
+                                st.error("Gagal kirim.")
+
+        st.divider()
+        # TOMBOL KIRIM SEMUA
+        if st.button("✈️ KIRIM SEMUA VIDEO KE TELEGRAM", type="secondary", use_container_width=True):
+            progress_text = "Sedang mengirim semua video..."
+            my_bar = st.progress(0, text=progress_text)
+            
+            success_count = 0
+            for idx, item in enumerate(results):
+                if send_telegram_video(item["url"], f"Batch Video #{idx+1}\nPrompt: {item['prompt']}"):
+                    success_count += 1
+                my_bar.progress((idx + 1) / len(results))
+                time.sleep(1) # Jeda agar tidak spamming
+            
+            st.success(f"Selesai! {success_count}/{len(results)} video terkirim.")
+
 
 # --- TAB 2: AUTO CREATE ACCOUNT ---
 with tab2:
