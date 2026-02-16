@@ -4,6 +4,7 @@ import time
 import socket
 import re
 import cloudscraper
+import io # Library tambahan untuk handle file di memory
 import requests.packages.urllib3.util.connection as urllib3_cn
 from datetime import datetime
 
@@ -48,32 +49,37 @@ _Sent from Sjinn Multi-Tasker_
     except Exception as e:
         st.error(f"Gagal kirim Notif Akun: {e}")
 
-# --- FUNGSI KIRIM VIDEO (Bot 2 - REVISI UPLOAD) ---
+# --- FUNGSI KIRIM VIDEO (Bot 2 - REVISI STABIL) ---
 def send_telegram_video(video_url, caption=""):
-    """Mengirim Video dengan cara Download -> Upload Ulang sebagai MP4"""
+    """
+    Mengirim Video dengan cara:
+    1. Download Full ke RAM (BytesIO)
+    2. Upload sebagai file .mp4 ke Telegram
+    """
     try:
-        # 1. Download konten video ke memori
-        # Gunakan stream=True agar tidak membebani memori jika file besar
-        r_vid = requests.get(video_url, stream=True)
+        # 1. Download Video ke Memory
+        r_get = requests.get(video_url)
         
-        if r_vid.status_code == 200:
+        if r_get.status_code == 200:
+            # Simpan ke buffer memory (seperti file virtual)
+            video_buffer = io.BytesIO(r_get.content)
+            video_buffer.name = "video.mp4" # Nama file wajib .mp4 agar dideteksi video player
+            
             url = f"https://api.telegram.org/bot{TG_TOKEN_VIDEO}/sendVideo"
             
-            # 2. Upload sebagai Multipart File dengan nama .mp4
-            # Ini kuncinya: nama file 'video.mp4' memaksa Telegram merender sebagai Video Player
             files = {
-                'video': ('generated_video.mp4', r_vid.raw, 'video/mp4')
+                'video': video_buffer
             }
             
             data = {
                 "chat_id": TG_CHAT_ID, 
                 "caption": caption,
-                "supports_streaming": True # Mengaktifkan fitur streaming
+                "supports_streaming": True # Agar bisa di-play tanpa download full di HP
             }
             
-            # Timeout diperpanjang karena proses upload butuh waktu
-            r = requests.post(url, data=data, files=files, timeout=120)
-            return r.status_code == 200
+            # Upload (Timeout 60 detik)
+            r_post = requests.post(url, data=data, files=files, timeout=60)
+            return r_post.status_code == 200
         return False
     except Exception as e:
         print(f"Error Upload Video: {e}")
@@ -447,9 +453,9 @@ with tab1:
                     st.link_button("⬇️ Unduh", item["url"], use_container_width=True)
                 with btn_col2:
                     if st.button("✈️ Telegram", key=f"gen_tg_{item['id']}"):
-                        with st.spinner("Mengirim Video..."):
+                        with st.spinner("Mengupload..."):
                             if send_telegram_video(item["url"], f"Prompt: {item['prompt']}"):
-                                st.toast("Terkirim ke Telegram!", icon="✅")
+                                st.toast("✅ Video Terkirim!")
                             else:
                                 st.error("Gagal kirim.")
 
@@ -564,9 +570,9 @@ with tab3:
                                             with gb_col2:
                                                 # Gunakan ID Video untuk key unik tombol
                                                 if st.button("✈️ Telegram", key=f"gal_tg_{vid.get('task_id')}"):
-                                                    with st.spinner("Mengupload ke Telegram..."):
+                                                    with st.spinner("Mengupload..."):
                                                         if send_telegram_video(video_url, f"From Gallery\nPrompt: {prompt_txt}"):
-                                                            st.toast("Terkirim ke Telegram!", icon="✅")
+                                                            st.toast("✅ Video Terkirim!")
                                                         else:
                                                             st.error("Gagal kirim.")
                                         else:
