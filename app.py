@@ -5,6 +5,8 @@ import socket
 import re
 import cloudscraper
 import io 
+import random
+import string
 import requests.packages.urllib3.util.connection as urllib3_cn
 from datetime import datetime
 
@@ -49,46 +51,34 @@ _Sent from Sjinn Multi-Tasker_
     except Exception as e:
         st.error(f"Gagal kirim Notif Akun: {e}")
 
-# --- FUNGSI KIRIM VIDEO (Bot 2 - FIXED FORMAT) ---
+# --- FUNGSI KIRIM VIDEO (Bot 2) ---
 def send_telegram_video(video_url, caption=""):
-    """
-    Mengirim Video sebagai MP4 Streaming yang Valid.
-    """
+    """Mengirim Video sebagai MP4 Streaming yang Valid."""
     try:
-        # 1. Download Video ke Memory
         r_get = requests.get(video_url)
-        
         if r_get.status_code == 200:
-            # Menggunakan BytesIO untuk menyimpan file di RAM
             video_bytes = io.BytesIO(r_get.content)
-            
             url = f"https://api.telegram.org/bot{TG_TOKEN_VIDEO}/sendVideo"
             
-            # PENTING: Format Tuple ('filename.mp4', binary_data, 'mime_type')
-            # Ini memaksa Telegram mendeteksi ini sebagai video player, bukan file biasa
             files = {
                 'video': ('generated_video.mp4', video_bytes, 'video/mp4')
             }
-            
             data = {
                 "chat_id": TG_CHAT_ID, 
                 "caption": caption,
-                "supports_streaming": "true" # String 'true' kadang lebih aman di API tertentu
+                "supports_streaming": "true" 
             }
             
-            # Upload
             r_post = requests.post(url, data=data, files=files, timeout=120)
-            
             if r_post.status_code == 200:
                 return True, "Berhasil"
             else:
                 return False, f"Telegram Error: {r_post.text}"
-                
         return False, "Gagal download video dari source."
     except Exception as e:
         return False, f"System Error: {e}"
 
-# --- FUNGSI AUTO CREATE ACCOUNT ---
+# --- FUNGSI AUTO CREATE ACCOUNT (ROMBAK API EMAILQU) ---
 def process_auto_create():
     status_container = st.status("🛠️ Sedang Membuat Akun Baru...", expanded=True)
     
@@ -96,36 +86,15 @@ def process_auto_create():
         scraper = cloudscraper.create_scraper(
             browser={'browser': 'firefox', 'platform': 'windows', 'mobile': False}
         )
+
+        # 1. GENERATE RANDOM EMAIL (emailqu.com)
+        chars = string.ascii_lowercase + string.digits
+        random_name = ''.join(random.choice(chars) for _ in range(8))
+        email_address = f"{random_name}@emailqu.com"
         
-        base_url_mail = "https://www.mailticking.com"
-        headers_mail = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Referer": base_url_mail + "/",
-            "Origin": base_url_mail
-        }
+        status_container.write(f"📧 Menggunakan Email: **{email_address}**")
 
-        # 1. GET EMAIL
-        status_container.write("📧 Requesting Temporary Email...")
-        r_mail = scraper.post(f"{base_url_mail}/get-mailbox", json={"types": ["4"]}, headers=headers_mail)
-        if r_mail.status_code != 200 or not r_mail.json().get("success"):
-            status_container.update(label="❌ Gagal ambil email!", state="error")
-            return None, None
-            
-        email_address = r_mail.json().get("email")
-        status_container.write(f"✅ Email didapat: **{email_address}**")
-
-        # 2. ACTIVATE EMAIL SESSION
-        scraper.post(f"{base_url_mail}/activate-email", json={"email": email_address}, headers=headers_mail)
-        
-        # 3. GET SESSION TOKEN
-        r_home = scraper.get(base_url_mail + "/", headers=headers_mail)
-        match = re.search(r'data-code="([^"]+)"', r_home.text)
-        if not match:
-            status_container.update(label="❌ Gagal ambil session mail!", state="error")
-            return None, None
-        data_code = match.group(1)
-
-        # 4. REGISTER TO SJINN
+        # 2. REGISTER TO SJINN
         status_container.write("📝 Mendaftar ke Sjinn.ai...")
         payload_reg = {"email": email_address, "password": email_address, "name": ""}
         headers_sjinn = {
@@ -144,37 +113,44 @@ def process_auto_create():
             
         status_container.write("📨 Menunggu Email Verifikasi (Maks 60 detik)...")
         
-        # 5. POLLING EMAIL
-        message_code = None
+        # 3. POLLING EMAIL DARI EMAILQU.COM
+        final_token = None
         for i in range(20): 
             time.sleep(3)
             try:
-                r_check = scraper.post(f"{base_url_mail}/get-emails?lang=", json={"email": email_address, "code": data_code}, headers=headers_mail)
-                emails = r_check.json().get("emails", [])
-                if emails:
-                    for mail in emails:
-                        if "sjinn.ai" in mail.get("FromEmail", "").lower():
-                            message_code = mail.get("Code")
-                            break
-                if message_code: break
-            except: pass
+                # Endpoint GET emailqu.com
+                url_check = f"https://emailqu.com/api/public/emails/{email_address}"
+                r_check = scraper.get(url_check, timeout=10)
+                
+                if r_check.status_code == 200:
+                    data_check = r_check.json()
+                    
+                    if data_check.get("success") and data_check.get("emails"):
+                        # Cari di semua email yang masuk
+                        for mail in data_check["emails"]:
+                            body_text = mail.get("body_text", "")
+                            body_html = mail.get("body_html", "")
+                            
+                            # Ekstrak token dengan regex dari text atau html
+                            token_match = re.search(r'token=([a-zA-Z0-9]{64})', body_text)
+                            if not token_match:
+                                token_match = re.search(r'token=([a-zA-Z0-9]{64})', body_html)
+                                
+                            if token_match:
+                                final_token = token_match.group(1)
+                                break
+                
+                if final_token: 
+                    status_container.write("🔍 Token ditemukan!")
+                    break
+            except Exception as e:
+                pass
             
-        if not message_code:
-            status_container.update(label="❌ Timeout! Email tidak masuk.", state="error")
+        if not final_token:
+            status_container.update(label="❌ Timeout! Email verifikasi tidak masuk.", state="error")
             return None, None
 
-        # 6. GET TOKEN
-        status_container.write("🔍 Mengekstrak Token Verifikasi...")
-        r_view = scraper.get(f"{base_url_mail}/mail/view/{message_code}/", headers=headers_mail)
-        token_match = re.search(r'token=([a-zA-Z0-9]{64})', r_view.text)
-        
-        if not token_match:
-            status_container.update(label="❌ Token tidak ditemukan di email.", state="error")
-            return None, None
-            
-        final_token = token_match.group(1)
-
-        # 7. VERIFY ACCOUNT
+        # 4. VERIFY ACCOUNT
         status_container.write("🔐 Memverifikasi Akun...")
         headers_verify = headers_sjinn.copy()
         if "Content-Type" in headers_verify: del headers_verify["Content-Type"]
@@ -552,15 +528,13 @@ with tab3:
                         if not all_videos:
                             st.info("Gallery kosong. Belum ada video yang ditemukan.")
                         else:
-                            # SIMPAN DATA KE SESSION STATE (PERSISTEN)
                             st.session_state["gallery_data"] = all_videos
                     else:
                         st.error("Gagal mengambil data riwayat.")
                 except Exception as e:
                     st.error(f"Terjadi kesalahan koneksi: {e}")
 
-    # --- RENDER GALLERY DARI SESSION STATE ---
-    # Ini dirender di luar blok tombol, jadi tidak hilang saat refresh
+    # --- RENDER GALLERY ---
     if "gallery_data" in st.session_state and st.session_state["gallery_data"]:
         videos = st.session_state["gallery_data"]
         st.write(f"Ditemukan **{len(videos)}** video.")
@@ -580,7 +554,6 @@ with tab3:
                         with gb_col1:
                             st.link_button("⬇️ Unduh", video_url, use_container_width=True)
                         with gb_col2:
-                            # Gunakan ID Video untuk key unik tombol
                             if st.button("✈️ Telegram", key=f"gal_tg_{vid.get('task_id')}"):
                                 with st.spinner("Mengupload ke Telegram..."):
                                     success, msg = send_telegram_video(video_url, f"From Gallery\nPrompt: {prompt_txt}")
@@ -591,7 +564,6 @@ with tab3:
                     else:
                         st.info(f"Video Status: {vid.get('status')} (Proses/Gagal)")
         
-        # --- TOMBOL KIRIM SEMUA DARI GALLERY ---
         st.divider()
         if st.button("✈️ KIRIM SEMUA VIDEO (GALLERY) KE TELEGRAM", type="secondary", use_container_width=True):
             if "gallery_data" in st.session_state and st.session_state["gallery_data"]:
