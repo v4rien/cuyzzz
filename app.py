@@ -16,13 +16,8 @@ def allowed_gai_family():
 urllib3_cn.allowed_gai_family = allowed_gai_family
 
 # --- KONFIGURASI TELEGRAM ---
-# 1. Bot untuk Notifikasi Akun Baru
 TG_TOKEN_ACCOUNT = "8497569370:AAGgtCtPyYPBGBhdqGQQv-DVV7d8JPC69Wo"
-
-# 2. Bot untuk Kirim Video
 TG_TOKEN_VIDEO = "7994485589:AAFRA_wJhn4Q4r8UHp_Egud5oEIw2GXcfPc"
-
-# Chat ID
 TG_CHAT_ID = "7779160370"
 
 # --- SETUP HALAMAN ---
@@ -30,9 +25,26 @@ st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wi
 
 st.title("🚀 Sjinn AI - Multi Task Generator")
 
-# --- FUNGSI KIRIM NOTIFIKASI AKUN (Bot 1) ---
+# =====================================================================
+# --- AUTO-UPDATE SIDEBAR STATE (KUNCI AGAR SIDEBAR OTOMATIS TERISI) ---
+# Bagian ini harus dieksekusi sebelum Sidebar digambar
+# =====================================================================
+if "pending_account_update" in st.session_state:
+    acc_data = st.session_state.pop("pending_account_update")
+    
+    # 1. Update Widget Key (Tampilan Fisik)
+    st.session_state["u_email_input"] = acc_data["email"]
+    st.session_state["chk_pass_widget"] = True
+    st.session_state["u_pass"] = acc_data["password"]
+    
+    # 2. Update Logical Variable (Sistem Internal)
+    st.session_state["u_email"] = acc_data["email"]
+    st.session_state["use_same_pass"] = True
+# =====================================================================
+
+
+# --- FUNGSI KIRIM NOTIFIKASI AKUN ---
 def send_telegram_notification(email, password, credits):
-    """Mengirim data akun ke Bot Account"""
     try:
         waktu = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         pesan = f"""
@@ -51,23 +63,15 @@ _Sent from Sjinn Multi-Tasker_
     except Exception as e:
         st.error(f"Gagal kirim Notif Akun: {e}")
 
-# --- FUNGSI KIRIM VIDEO (Bot 2) ---
+# --- FUNGSI KIRIM VIDEO ---
 def send_telegram_video(video_url, caption=""):
-    """Mengirim Video sebagai MP4 Streaming yang Valid."""
     try:
         r_get = requests.get(video_url)
         if r_get.status_code == 200:
             video_bytes = io.BytesIO(r_get.content)
             url = f"https://api.telegram.org/bot{TG_TOKEN_VIDEO}/sendVideo"
-            
-            files = {
-                'video': ('generated_video.mp4', video_bytes, 'video/mp4')
-            }
-            data = {
-                "chat_id": TG_CHAT_ID, 
-                "caption": caption,
-                "supports_streaming": "true" 
-            }
+            files = {'video': ('generated_video.mp4', video_bytes, 'video/mp4')}
+            data = {"chat_id": TG_CHAT_ID, "caption": caption, "supports_streaming": "true"}
             
             r_post = requests.post(url, data=data, files=files, timeout=120)
             if r_post.status_code == 200:
@@ -78,15 +82,12 @@ def send_telegram_video(video_url, caption=""):
     except Exception as e:
         return False, f"System Error: {e}"
 
-# --- FUNGSI AUTO CREATE ACCOUNT (ROMBAK API EMAILQU) ---
+# --- FUNGSI AUTO CREATE ACCOUNT ---
 def process_auto_create():
     status_container = st.status("🛠️ Sedang Membuat Akun Baru...", expanded=True)
-    
     try:
-        scraper = cloudscraper.create_scraper(
-            browser={'browser': 'firefox', 'platform': 'windows', 'mobile': False}
-        )
-
+        scraper = cloudscraper.create_scraper(browser={'browser': 'firefox', 'platform': 'windows', 'mobile': False})
+        
         # 1. GENERATE RANDOM EMAIL (emailqu.com)
         chars = string.ascii_lowercase + string.digits
         random_name = ''.join(random.choice(chars) for _ in range(8))
@@ -118,7 +119,6 @@ def process_auto_create():
         for i in range(20): 
             time.sleep(3)
             try:
-                # Endpoint GET emailqu.com
                 url_check = f"https://emailqu.com/api/public/emails/{email_address}"
                 r_check = scraper.get(url_check, timeout=10)
                 
@@ -126,12 +126,10 @@ def process_auto_create():
                     data_check = r_check.json()
                     
                     if data_check.get("success") and data_check.get("emails"):
-                        # Cari di semua email yang masuk
                         for mail in data_check["emails"]:
                             body_text = mail.get("body_text", "")
                             body_html = mail.get("body_html", "")
                             
-                            # Ekstrak token dengan regex dari text atau html
                             token_match = re.search(r'token=([a-zA-Z0-9]{64})', body_text)
                             if not token_match:
                                 token_match = re.search(r'token=([a-zA-Z0-9]{64})', body_html)
@@ -139,7 +137,6 @@ def process_auto_create():
                             if token_match:
                                 final_token = token_match.group(1)
                                 break
-                
                 if final_token: 
                     status_container.write("🔍 Token ditemukan!")
                     break
@@ -216,6 +213,7 @@ with st.sidebar:
     st.header("Account Config")
     st.caption("Akun yang sedang aktif digunakan:")
     
+    # Default value di-set ke variable logika
     def_email = st.session_state.get("u_email", "")
     email_input = st.text_input("Email", value=def_email, key="u_email_input")
     
@@ -305,7 +303,6 @@ with tab1:
             st.error(f"Error Login: {e}")
             return
         
-        # Update credits awal
         try:
             r_info = session.get("https://sjinn.ai/api/get_user_account")
             if r_info.status_code == 200:
@@ -431,7 +428,7 @@ with tab1:
                     st.link_button("⬇️ Unduh", item["url"], use_container_width=True)
                 with btn_col2:
                     if st.button("✈️ Telegram", key=f"gen_tg_{item['id']}"):
-                        with st.spinner("Mengupload ke Telegram..."):
+                        with st.spinner("Mengupload..."):
                             success, msg = send_telegram_video(item["url"], f"Prompt: {item['prompt']}")
                             if success:
                                 st.toast("✅ Video Terkirim!")
@@ -456,7 +453,7 @@ with tab1:
 # --- TAB 2: AUTO CREATE ACCOUNT ---
 with tab2:
     st.subheader("⚡ Auto Register & Verify Account")
-    st.info("Akun yang berhasil dibuat akan otomatis dikirim ke Telegram Bot Anda.", icon="✈️")
+    st.info("Akun yang berhasil dibuat akan otomatis mengisi sidebar dan dikirim ke Telegram Bot Anda.", icon="✈️")
     
     if "new_account_log" in st.session_state:
         acc_data = st.session_state["new_account_log"]
@@ -479,24 +476,26 @@ with tab2:
         if st.button("🛠️ Generate Akun Baru", type="primary", use_container_width=True):
             new_email, new_pass = process_auto_create()
             if new_email:
-                st.session_state["u_email"] = new_email
-                st.session_state["u_pass"] = new_pass
-                st.session_state["use_same_pass"] = True 
-
+                
+                # 1. Simpan Log untuk di Tab 2
                 st.session_state["new_account_log"] = {
                     "email": new_email,
                     "pass": new_pass,
                     "time": datetime.now().strftime("%H:%M:%S")
                 }
-
-                if "u_email_input" in st.session_state:
-                    del st.session_state["u_email_input"]
-                if "chk_pass_widget" in st.session_state:
-                    del st.session_state["chk_pass_widget"]
                 
+                # 2. Siapkan data untuk meng-update Sidebar secara aman (Pending State)
+                st.session_state["pending_account_update"] = {
+                    "email": new_email,
+                    "password": new_pass
+                }
+                
+                # 3. Cek saldo pakai email baru
                 check_credits(manual_email=new_email, manual_pass=new_pass)
                 
+                # 4. Refresh halaman agar sidebar terupdate otomatis
                 st.rerun()
+
 
 # --- TAB 3: ACCOUNT GALLERY ---
 with tab3:
