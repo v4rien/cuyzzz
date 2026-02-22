@@ -26,22 +26,20 @@ st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wi
 st.title("🚀 Sjinn AI - Multi Task Generator")
 
 # =====================================================================
-# --- AUTO-UPDATE SIDEBAR STATE (KUNCI AGAR SIDEBAR OTOMATIS TERISI) ---
-# Bagian ini harus dieksekusi sebelum Sidebar digambar
+# --- AUTO-UPDATE SIDEBAR STATE ---
 # =====================================================================
 if "pending_account_update" in st.session_state:
     acc_data = st.session_state.pop("pending_account_update")
     
-    # 1. Update Widget Key (Tampilan Fisik)
+    # Update State UI Widget
     st.session_state["u_email_input"] = acc_data["email"]
     st.session_state["chk_pass_widget"] = True
-    st.session_state["u_pass"] = acc_data["password"]
     
-    # 2. Update Logical Variable (Sistem Internal)
+    # Update Variable Logic Internal
     st.session_state["u_email"] = acc_data["email"]
+    st.session_state["u_pass"] = acc_data["password"]
     st.session_state["use_same_pass"] = True
 # =====================================================================
-
 
 # --- FUNGSI KIRIM NOTIFIKASI AKUN ---
 def send_telegram_notification(email, password, credits):
@@ -88,7 +86,7 @@ def process_auto_create():
     try:
         scraper = cloudscraper.create_scraper(browser={'browser': 'firefox', 'platform': 'windows', 'mobile': False})
         
-        # 1. GENERATE RANDOM EMAIL (emailqu.com)
+        # 1. GENERATE RANDOM EMAIL
         chars = string.ascii_lowercase + string.digits
         random_name = ''.join(random.choice(chars) for _ in range(8))
         email_address = f"{random_name}@emailqu.com"
@@ -124,7 +122,6 @@ def process_auto_create():
                 
                 if r_check.status_code == 200:
                     data_check = r_check.json()
-                    
                     if data_check.get("success") and data_check.get("emails"):
                         for mail in data_check["emails"]:
                             body_text = mail.get("body_text", "")
@@ -208,32 +205,35 @@ def check_credits(manual_email=None, manual_pass=None):
             st.session_state["user_credits"] = "Error"
             st.error(f"Error Koneksi: {e}")
 
-# --- SIDEBAR (INPUT AKUN) ---
+# --- SIDEBAR (INPUT AKUN DIPERBAIKI) ---
 with st.sidebar:
     st.header("Account Config")
     st.caption("Akun yang sedang aktif digunakan:")
     
-    # Default value di-set ke variable logika
-    def_email = st.session_state.get("u_email", "")
-    email_input = st.text_input("Email", value=def_email, key="u_email_input")
+    # Pastikan state widget terinisialisasi di awal agar tidak kosong
+    if "u_email_input" not in st.session_state:
+        st.session_state["u_email_input"] = st.session_state.get("u_email", "")
     
-    if email_input != st.session_state.get("u_email", ""):
-        st.session_state["u_email"] = email_input
+    # HAPUS parameter value=, biarkan Streamlit mengambil dari session_state
+    email_input = st.text_input("Email", key="u_email_input")
+    st.session_state["u_email"] = email_input # Sinkronkan ke variabel internal
 
-    if "use_same_pass" not in st.session_state:
-        st.session_state["use_same_pass"] = True
+    if "chk_pass_widget" not in st.session_state:
+        st.session_state["chk_pass_widget"] = st.session_state.get("use_same_pass", True)
 
-    is_checked = st.checkbox(
-        "Password same as email", 
-        value=st.session_state["use_same_pass"], 
-        key="chk_pass_widget"
-    )
+    # HAPUS parameter value=
+    is_checked = st.checkbox("Password same as email", key="chk_pass_widget")
     st.session_state["use_same_pass"] = is_checked
 
+    # Logika Input Password Khusus
     if not st.session_state["use_same_pass"]:
-        pass_input = st.text_input("Password", key="u_pass", type="password")
+        if "u_pass_input" not in st.session_state:
+            st.session_state["u_pass_input"] = st.session_state.get("u_pass", "")
+        pass_input = st.text_input("Password", type="password", key="u_pass_input")
+        st.session_state["u_pass"] = pass_input
     else:
         pass_input = email_input
+        st.session_state["u_pass"] = email_input
 
     st.write("") 
     
@@ -270,7 +270,7 @@ with tab1:
             return
         
         target_email = st.session_state.get("u_email", "")
-        target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
+        target_pass = st.session_state.get("u_pass", "")
         
         if not target_email:
             st.error("Email kosong! Silakan isi manual di sidebar atau buat akun baru di Tab Auto Create.")
@@ -437,7 +437,7 @@ with tab1:
 
         st.divider()
         if st.button("✈️ KIRIM SEMUA VIDEO KE TELEGRAM", type="secondary", use_container_width=True):
-            progress_text = "Sedang mengirim semua video (Upload Ulang)..."
+            progress_text = "Sedang mengirim semua video..."
             my_bar = st.progress(0, text=progress_text)
             
             success_count = 0
@@ -476,15 +476,14 @@ with tab2:
         if st.button("🛠️ Generate Akun Baru", type="primary", use_container_width=True):
             new_email, new_pass = process_auto_create()
             if new_email:
-                
-                # 1. Simpan Log untuk di Tab 2
+                # 1. Simpan Log untuk Tab 2
                 st.session_state["new_account_log"] = {
                     "email": new_email,
                     "pass": new_pass,
                     "time": datetime.now().strftime("%H:%M:%S")
                 }
                 
-                # 2. Siapkan data untuk meng-update Sidebar secara aman (Pending State)
+                # 2. Siapkan Pending State untuk Sidebar
                 st.session_state["pending_account_update"] = {
                     "email": new_email,
                     "password": new_pass
@@ -493,9 +492,8 @@ with tab2:
                 # 3. Cek saldo pakai email baru
                 check_credits(manual_email=new_email, manual_pass=new_pass)
                 
-                # 4. Refresh halaman agar sidebar terupdate otomatis
+                # 4. Rerun agar State dieksekusi di atas
                 st.rerun()
-
 
 # --- TAB 3: ACCOUNT GALLERY ---
 with tab3:
@@ -503,7 +501,7 @@ with tab3:
     
     if st.button("🔄 Refresh / Muat Gallery", use_container_width=True):
         target_email = st.session_state.get("u_email", "")
-        target_pass = target_email if st.session_state.get("use_same_pass") else st.session_state.get("u_pass", "")
+        target_pass = st.session_state.get("u_pass", "")
 
         if not target_email:
             st.error("Silakan isi Email & Password di sidebar, lalu klik Login!")
@@ -554,7 +552,7 @@ with tab3:
                             st.link_button("⬇️ Unduh", video_url, use_container_width=True)
                         with gb_col2:
                             if st.button("✈️ Telegram", key=f"gal_tg_{vid.get('task_id')}"):
-                                with st.spinner("Mengupload ke Telegram..."):
+                                with st.spinner("Mengupload..."):
                                     success, msg = send_telegram_video(video_url, f"From Gallery\nPrompt: {prompt_txt}")
                                     if success:
                                         st.toast("✅ Video Terkirim!")
@@ -583,5 +581,3 @@ with tab3:
                     time.sleep(1)
                 
                 st.success(f"Selesai! {success_count}/{len(videos)} video terkirim.")
-            else:
-                st.warning("Tidak ada data video untuk dikirim.")
