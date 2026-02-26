@@ -18,7 +18,7 @@ urllib3_cn.allowed_gai_family = allowed_gai_family
 # --- KONFIGURASI TELEGRAM ---
 TG_TOKEN_ACCOUNT = "8700720215:AAHQiJq1E4yznkAp2C8CV-AGNLcskvkhFNE"
 TG_TOKEN_VIDEO = "8607515924:AAGLrYdFV5JhbY9mxChRFynDcztGgPL6DLs"
-TG_CHAT_ID = "7779160370"
+TG_CHAT_ID = "1146892371"
 
 # --- SETUP HALAMAN ---
 st.set_page_config(page_title="Sjinn Multi-Tasker", page_icon="🚀", layout="wide") 
