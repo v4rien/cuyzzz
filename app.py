@@ -205,27 +205,23 @@ def check_credits(manual_email=None, manual_pass=None):
             st.session_state["user_credits"] = "Error"
             st.error(f"Error Koneksi: {e}")
 
-# --- SIDEBAR (INPUT AKUN DIPERBAIKI) ---
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("Account Config")
     st.caption("Akun yang sedang aktif digunakan:")
     
-    # Pastikan state widget terinisialisasi di awal agar tidak kosong
     if "u_email_input" not in st.session_state:
         st.session_state["u_email_input"] = st.session_state.get("u_email", "")
     
-    # HAPUS parameter value=, biarkan Streamlit mengambil dari session_state
     email_input = st.text_input("Email", key="u_email_input")
-    st.session_state["u_email"] = email_input # Sinkronkan ke variabel internal
+    st.session_state["u_email"] = email_input
 
     if "chk_pass_widget" not in st.session_state:
         st.session_state["chk_pass_widget"] = st.session_state.get("use_same_pass", True)
 
-    # HAPUS parameter value=
     is_checked = st.checkbox("Password same as email", key="chk_pass_widget")
     st.session_state["use_same_pass"] = is_checked
 
-    # Logika Input Password Khusus
     if not st.session_state["use_same_pass"]:
         if "u_pass_input" not in st.session_state:
             st.session_state["u_pass_input"] = st.session_state.get("u_pass", "")
@@ -251,10 +247,14 @@ with tab1:
     
     st.write("") 
 
-    c_prompt, c_count, c_delay = st.columns([4, 1, 1]) 
+    # --- PENAMBAHAN KOLOM UNTUK ASPECT RATIO ---
+    c_prompt, c_ratio, c_count, c_delay = st.columns([3, 1, 1, 1]) 
     
     with c_prompt:
         prompt_input = st.text_input("Prompt Video", value="", placeholder="Describe the motion...")
+        
+    with c_ratio:
+        aspect_ratio_input = st.selectbox("Aspect Ratio", ["9:16", "16:9", "1:1"])
         
     with c_count:
         loop_count = st.number_input("Jumlah", min_value=1, max_value=50, value=1, step=1)
@@ -357,9 +357,14 @@ with tab1:
         
         for i in range(1, loop_count + 1):
             try:
+                # --- UPDATE PAYLOAD DISINI ---
                 payload_task = {
                     "id": "sjinn-image-to-video",
-                    "input": {"image_url": file_uuid, "prompt": prompt_input},
+                    "input": {
+                        "image_url": file_uuid, 
+                        "prompt": prompt_input,
+                        "aspect_ratio": aspect_ratio_input
+                    },
                     "mode": "template"
                 }
                 
@@ -449,7 +454,6 @@ with tab1:
             
             st.success(f"Selesai! {success_count}/{len(results)} video terkirim.")
 
-
 # --- TAB 2: AUTO CREATE ACCOUNT ---
 with tab2:
     st.subheader("⚡ Auto Register & Verify Account")
@@ -476,23 +480,18 @@ with tab2:
         if st.button("🛠️ Generate Akun Baru", type="primary", use_container_width=True):
             new_email, new_pass = process_auto_create()
             if new_email:
-                # 1. Simpan Log untuk Tab 2
                 st.session_state["new_account_log"] = {
                     "email": new_email,
                     "pass": new_pass,
                     "time": datetime.now().strftime("%H:%M:%S")
                 }
                 
-                # 2. Siapkan Pending State untuk Sidebar
                 st.session_state["pending_account_update"] = {
                     "email": new_email,
                     "password": new_pass
                 }
                 
-                # 3. Cek saldo pakai email baru
                 check_credits(manual_email=new_email, manual_pass=new_pass)
-                
-                # 4. Rerun agar State dieksekusi di atas
                 st.rerun()
 
 # --- TAB 3: ACCOUNT GALLERY ---
